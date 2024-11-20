@@ -57,12 +57,6 @@ vcf_rng_gnomad_chek2 <- readVcf(tab_gnomad, "hg38", param=rng_chek2)
 # Extract fixed fields for CHROM, POS, REF, ALT
 gnomad_fixed <- as.data.frame(rowRanges(vcf_rng_gnomad_chek2))
 
-# Rename columns for clarity
-gnomad_fixed <- gnomad_fixed %>%
-  rename(
-    CHROM = seqnames,
-    POS = start
-  )
 
 # Check contents
 head(gnomad_fixed)
@@ -157,7 +151,92 @@ chek2_df_filtered$merge <- paste(chek2_df_filtered$start, chek2_df_filtered$REF,
 combined_inner_join <- inner_join(chek2_df_filtered, gnomad_fixed, by = "merge")
 
 
+# Classifying pathogenicity for values labeled as "conflicting"
+unique(combined_inner_join$CLNSIG)
 
+# Cleaning the CLNSIG column 
+combined_inner_join$CLNSIG <- trimws(combined_inner_join$CLNSIG)
+combined_inner_join$CLNSIG <- as.factor(combined_inner_join$CLNSIG)
+str(combined_inner_join$CLNSIG)
+str(combined_inner_join$FAFmax_faf95_max_joint)
+
+# Scatterplot to visualize the distribution of allele freq. and clingsig
+library(ggplot2)
+
+ggplot(combined_inner_join, aes(x = CLNSIG, y = FAFmax_faf95_max_joint, color = CLNSIG)) +
+  geom_point(size = 3, alpha = 0.7) +  # Scatter points
+  labs(
+    title = "Scatterplot of Allele Frequency by Clinical Significance",
+    x = "Clinical Significance",
+    y = "Allele Frequency"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+### Using k nearest neighbor to determine pathogenicity for conflicting values
+library(FNN)
+library(VIM)
+
+# # Replace "conflicting" with NA in the 'CLNSIG' column
+combined_inner_join$pathgen <- ifelse(grepl("conflicting", combined_inner_join$CLNSIG, ignore.case = TRUE), 
+                                     NA, 
+                                     combined_inner_join$CLNSIG)
+
+# Check specific rows where CLNSIG is NA
+combined_inner_join[is.na(combined_inner_join$pathgen), ]
+
+# Perform k-NN imputation
+imputed_data <- kNN(combined_inner_join, variable = "pathgen", dist_var = "FAFmax_faf95_max_joint", k = 5)
+
+# Extract the imputed dataset
+imputed_data_clean <- imputed_data[, 1:ncol(combined_inner_join)]
+
+print("Imputed Dataset:")
+print(head(imputed_data_clean))
+
+# Verify imputed values
+summary(imputed_data_clean$pathgen)
+
+# Replace the original column with the imputed one
+combined_inner_join$pathgen <- imputed_data$pathgen
+
+# Compare original and imputed values
+comparison <- data.frame(
+  Original = combined_inner_join$CLNSIG,
+  Imputed = imputed_data$pathgen
+)
+
+# Matching up imputed data with categorical variables
+comparison_non_missing <- comparison[!is.na(comparison$Original), ]
+print(comparison_non_missing)
+
+category_mapping <- c("10" = "Uncertain_significance", 
+                      "5" = "Likely_benign", 
+                      "2" = "Benign/Likely_benign", 
+                      "9" = "Pathogenic/Likely_pathogenic",
+                      "6" = "Likely_pathogenic",
+                      "1" = "Benign",
+                      "7" = "not provided",
+                      "8" = "Pathogenic")
+
+# Covert imputed category "pathgen" into categories 
+combined_inner_join$pathgen <- as.character(category_mapping[as.character(imputed_data$pathgen)])
+
+# Scatterplot for visualization again 
+ggplot(combined_inner_join, aes(x = pathgen, y = FAFmax_faf95_max_joint, color = pathgen)) +
+  geom_point(size = 3, alpha = 0.7) +  # Scatter points
+  labs(
+    title = "Scatterplot of Allele Frequency by Clinical Significance",
+    x = "Clinical Significance",
+    y = "Allele Frequency"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1),  # Make x-axis labels vertical
+    plot.title = element_text(hjust = 0.5)  # Center the title
+  )
+
+# Plotting what the conflicting values were assigned as 
 
 
 ## DOuble checks 
