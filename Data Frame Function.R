@@ -142,7 +142,18 @@ results <- lapply(genes, function(gene) {
 chek2_data <- results[[1]]
 # brca1_data <- results[[2]]
 
+# Creating a dataframe for CYP27A1 
+genes <- c("CYP27A1")
 
+results <- lapply(genes, function(gene) {
+  process_gene_variants(
+    gene_name = gene,
+    gnomad_vcf_path = "/Users/anushaakhtar/Downloads/gnomad.joint.v4.1.sites.chr2.vcf.bgz",
+    clinvar_vcf_path = "/Volumes/Seagate/Capstone/clinvar.vcf.gz"
+  )
+})
+
+cyp27a1_data <- results[[1]]
 
 
 
