@@ -1,8 +1,6 @@
 ## SET UP 
 
 exonfile <- 'C:/Users/sramachandran/Documents/GitHub/Capstone_2024/Resources/CodingLocs_hg38.rds'
-exonfile <- '/Users/anushaakhtar/Documents/GitHub/Capstone_2024/Resources/CodingLocs_hg38.rds'
-
 readRDS(exonfile)
 exonpositions <- readRDS(exonfile)
 
@@ -18,7 +16,6 @@ BiocManager::install("GenomicRanges")
 
 # Install dplyr for data manipulation
 install.packages("dplyr")
-library(BiocManager)
 
 # Load the VariantAnnotation package for VCF file handling
 library(VariantAnnotation)
@@ -45,7 +42,6 @@ rng_chek2 <- GRanges(seqnames = "chr22", ranges = IRanges(
 
 # Path to gnomAD VCF for chromosome 22
 gnomad_vcf_chr22 <- "F:/Capstone/Resources/gnomAD/gnomad.joint.v4.1.sites.chr22.vcf.bgz"
-gnomad_vcf_chr22 <- "/Volumes/Seagate/Capstone/gnomad.joint.v4.1.sites.chr22.vcf.bgz"
 
 # Open the VCF with TabixFile for subsetting
 tab_gnomad <- TabixFile(gnomad_vcf_chr22)
@@ -57,6 +53,12 @@ vcf_rng_gnomad_chek2 <- readVcf(tab_gnomad, "hg38", param=rng_chek2)
 # Extract fixed fields for CHROM, POS, REF, ALT
 gnomad_fixed <- as.data.frame(rowRanges(vcf_rng_gnomad_chek2))
 
+# Rename columns for clarity
+gnomad_fixed <- gnomad_fixed %>%
+  rename(
+    CHROM = seqnames,
+    POS = start
+  )
 
 # Check contents
 head(gnomad_fixed)
@@ -103,141 +105,15 @@ gnomad_fixed$merge <- paste(gnomad_fixed$start, gnomad_fixed$REF, gnomad_fixed$a
 # how many sampels from each pop and what is the count 
 # maybe get rid of small indels 
 
-# Load in clinvar data 
-# Define Clinvar path to VCF 
-clinvar_vcf <- "/Volumes/Seagate/Capstone/clinvar.vcf.gz"
-vcf_clinvar <- readVcf(clinvar_vcf, "hg38") 
-
-# Check and filter for gene chek2
-# Extract the GENEINFO field from the INFO column
-geneinfo_data <- info(vcf_clinvar)$GENEINFO
-
-# Check if any entries in GENEINFO contain "CHEK2"
-contains_chek2 <- grep("CHEK2", geneinfo_data, ignore.case = TRUE, value = TRUE)
-
-# Filter the variants where GENEINFO contains "CHEK2"
-chek2_variants <- grepl("CHEK2", geneinfo_data, ignore.case = TRUE)
-
-# Subset the VCF to keep only rows where GENEINFO contains "CHEK2"
-vcf_chek2 <- vcf_clinvar[chek2_variants, ]
-
-# Check that the file is filtered only for chek2
-geneinfo_values <- info(vcf_chek2)$GENEINFO
-unique_geneinfo_values <- unique(geneinfo_values)
-
-# Converting vcf_chek2 to a data frame
-info_chek2 <- info(vcf_chek2)
-chek2_info <- as.data.frame(info_chek2)
-
-# Extract the genomic ranges from chek2 vcf and convert to data frame
-gr_chek2 <- rowRanges(vcf_chek2)
-chek2_gr <- as.data.frame(gr_chek2)
-
-# Combine both data frames 
-chek2_df <- cbind(chek2_info, chek2_gr)
-
-# Filter the chek2 df
-chek2_df_filtered <- chek2_df %>%
-  select(start, REF, ALT, AF_ESP, ALLELEID, CLNHGVS, CLNSIG, MC, GENEINFO, RS)
-
+### MERGE CLINVAR AND GNOMAD 
 # Convert the ALT column to character for ClinVar
 chek2_df_filtered$alt_values <- sapply(chek2_df_filtered$ALT, function(x) as.character(x))
 
 # Create new column 
 chek2_df_filtered$merge <- paste(chek2_df_filtered$start, chek2_df_filtered$REF, chek2_df_filtered$alt_values, sep = " ")
 
-### MERGE CLINVAR AND GNOMAD 
 # Merge Clivar and Gnomad 
 combined_inner_join <- inner_join(chek2_df_filtered, gnomad_fixed, by = "merge")
-
-
-# Classifying pathogenicity for values labeled as "conflicting"
-unique(combined_inner_join$CLNSIG)
-
-# Cleaning the CLNSIG column 
-combined_inner_join$CLNSIG <- trimws(combined_inner_join$CLNSIG)
-combined_inner_join$CLNSIG <- as.factor(combined_inner_join$CLNSIG)
-str(combined_inner_join$CLNSIG)
-str(combined_inner_join$FAFmax_faf95_max_joint)
-
-# Scatterplot to visualize the distribution of allele freq. and clingsig
-library(ggplot2)
-
-ggplot(combined_inner_join, aes(x = CLNSIG, y = FAFmax_faf95_max_joint, color = CLNSIG)) +
-  geom_point(size = 3, alpha = 0.7) +  # Scatter points
-  labs(
-    title = "Scatterplot of Allele Frequency by Clinical Significance",
-    x = "Clinical Significance",
-    y = "Allele Frequency"
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
-
-### Using k nearest neighbor to determine pathogenicity for conflicting values
-library(FNN)
-library(VIM)
-
-# # Replace "conflicting" with NA in the 'CLNSIG' column
-combined_inner_join$pathgen <- ifelse(grepl("conflicting", combined_inner_join$CLNSIG, ignore.case = TRUE), 
-                                     NA, 
-                                     combined_inner_join$CLNSIG)
-
-# Check specific rows where CLNSIG is NA
-combined_inner_join[is.na(combined_inner_join$pathgen), ]
-
-# Perform k-NN imputation
-imputed_data <- kNN(combined_inner_join, variable = "pathgen", dist_var = "FAFmax_faf95_max_joint", k = 5)
-
-# Extract the imputed dataset
-imputed_data_clean <- imputed_data[, 1:ncol(combined_inner_join)]
-
-print("Imputed Dataset:")
-print(head(imputed_data_clean))
-
-# Verify imputed values
-summary(imputed_data_clean$pathgen)
-
-# Replace the original column with the imputed one
-combined_inner_join$pathgen <- imputed_data$pathgen
-
-# Compare original and imputed values
-comparison <- data.frame(
-  Original = combined_inner_join$CLNSIG,
-  Imputed = imputed_data$pathgen
-)
-
-# Matching up imputed data with categorical variables
-comparison_non_missing <- comparison[!is.na(comparison$Original), ]
-print(comparison_non_missing)
-
-category_mapping <- c("10" = "Uncertain_significance", 
-                      "5" = "Likely_benign", 
-                      "2" = "Benign/Likely_benign", 
-                      "9" = "Pathogenic/Likely_pathogenic",
-                      "6" = "Likely_pathogenic",
-                      "1" = "Benign",
-                      "7" = "not provided",
-                      "8" = "Pathogenic")
-
-# Covert imputed category "pathgen" into categories 
-combined_inner_join$pathgen <- as.character(category_mapping[as.character(imputed_data$pathgen)])
-
-# Scatterplot for visualization again 
-ggplot(combined_inner_join, aes(x = pathgen, y = FAFmax_faf95_max_joint, color = pathgen)) +
-  geom_point(size = 3, alpha = 0.7) +  # Scatter points
-  labs(
-    title = "Scatterplot of Allele Frequency by Clinical Significance",
-    x = "Clinical Significance",
-    y = "Allele Frequency"
-  ) +
-  theme_minimal() +
-  theme(
-    axis.text.x = element_text(angle = 90, hjust = 1),  # Make x-axis labels vertical
-    plot.title = element_text(hjust = 0.5)  # Center the title
-  )
-
-# Plotting what the conflicting values were assigned as 
-
 
 ## DOuble checks 
 
