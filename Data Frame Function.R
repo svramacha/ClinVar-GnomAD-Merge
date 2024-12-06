@@ -68,7 +68,6 @@ library(GenomicRanges)
 library(VariantAnnotation)
 library(dplyr)
 library(TxDb.Hsapiens.UCSC.hg38.knownGene)
-BiocManager::install("TxDb.Hsapiens.UCSC.hg38.knownGene")
 library(org.Hs.eg.db)
 
 process_gene_variants <- function(gene_name, gnomad_vcf_path, clinvar_vcf_path) {
@@ -142,6 +141,10 @@ results <- lapply(genes, function(gene) {
 chek2_data <- results[[1]]
 # brca1_data <- results[[2]]
 
+# Number of observations for each pathogenicity
+count_table <- table(unlist(chek2_data$CLNSIG))
+
+
 # Creating a dataframe for CYP27A1 
 genes <- c("CYP27A1")
 
@@ -155,6 +158,8 @@ results <- lapply(genes, function(gene) {
 
 cyp27a1_data <- results[[1]]
 
+# Just pull exonic regions (in the data file)
+# Want function to read in gene first and then determine chr
 
 
 
