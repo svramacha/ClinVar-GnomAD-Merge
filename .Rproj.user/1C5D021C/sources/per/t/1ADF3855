@@ -1,0 +1,26 @@
+{
+    "id": "1ADF3855",
+    "path": "~/GitHub/ClinVar-GnomAD-Merge/updated_1210.R",
+    "project_path": "updated_1210.R",
+    "type": "r_source",
+    "hash": "1062421112",
+    "contents": "",
+    "dirty": false,
+    "created": 1734466099754.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "344,0",
+        "scrollLine": "331"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1736386125,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1736386125749,
+    "read_only": false,
+    "read_only_alternatives": []
+}
