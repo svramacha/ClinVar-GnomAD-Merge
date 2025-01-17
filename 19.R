@@ -33,6 +33,21 @@ library(tidyr)
 # Load the Biostrings package
 library(Biostrings)
 
+# To load GRanges
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+BiocManager::install("GenomicRanges", force = TRUE)
+
+library(GenomicRanges)
+
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+  install.packages("BiocManager")
+}
+
+BiocManager::install("Rsamtools", force = TRUE)
+library(Rsamtools)
+
 
 # Define region of interest
 # Specific for CHR 22
