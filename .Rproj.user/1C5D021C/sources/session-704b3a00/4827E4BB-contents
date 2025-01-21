@@ -5,95 +5,110 @@ library(jsonlite)
 library(Rsamtools)
 library(VariantAnnotation)
 
-# Function to combine gnomAD, ClinVar, and CADD data for PTEN gene on chr10
-combine_pten_data <- function(gnomad_url, clinvar_vcf_path, cadd_file_path, chrom = "chr10", start = 87863114, end = 87971941) {
+library(httr)
+library(jsonlite)
+library(VariantAnnotation)
+
+combine_gene_data <- function(gene, chrom, start, stop, gnomad_url, clinvar_vcf_path, cadd_file_path) {
+  # GraphQL query for gnomAD API
+  query <- '
+  query GeneVariantsFilteringAF($chrom: String!, $start: Int!, $stop: Int!) {
+    region(chrom: $chrom, start: $start, stop: $stop, reference_genome: GRCh38) {
+      variants(dataset: gnomad_r4) {
+        variant_id
+        ref
+        alt
+        flags
+        joint {
+          ac
+          an
+          filters
+          fafmax {
+            faf95_max
+            faf95_max_gen_anc
+          }
+        }
+      }
+    }
+  }
+  '
   
-  # Define the region of interest for PTEN (chromosome 10)
-  rng_pten <- GRanges(seqnames = chrom, ranges = IRanges(start = start, end = end, names = "PTEN"))
-  
-  # ---- 1. Query gnomAD API for PTEN gene data on chromosome 10 ----
-  query <- list(
-    "gene" = "PTEN",
-    "chrom" = chrom,
-    "start" = as.character(start),
-    "end" = as.character(end)
+  # Query variables
+  variables <- list(
+    chrom = chrom,
+    start = start,
+    stop = stop
   )
   
-  # Send the API request to gnomAD
-  response <- GET(gnomad_url, query = query)
+  # Create the POST request body
+  body <- toJSON(list(
+    query = query,
+    variables = variables
+  ), auto_unbox = TRUE)
   
-  # Parse the response
-  response_data <- content(response, "text")
-  gnomad_data <- fromJSON(response_data)
-  
-  # Extract relevant information from the gnomAD response
-  variants_data <- gnomad_data$data$variants
-  
-  # Create a dataframe for gnomAD variants
-  gnomad_df <- data.frame(
-    CHROM = chrom,
-    POS = unlist(lapply(variants_data, function(x) x$start)),
-    REF = unlist(lapply(variants_data, function(x) x$reference)),
-    ALT = unlist(lapply(variants_data, function(x) x$alt)),
-    AF = unlist(lapply(variants_data, function(x) x$allele_frequency)),
-    stringsAsFactors = FALSE
+  # Make the API call
+  response <- POST(
+    gnomad_url,
+    body = body,
+    encode = "raw", 
+    content_type("application/json"),
+    timeout(60)
   )
   
-  # ---- 2. Extract ClinVar Data for PTEN ----
-  vcf_clinvar <- readVcf(clinvar_vcf_path, "hg38")
+  # Check response status
+  if (status_code(response) != 200) {
+    stop("Error fetching data from gnomAD API. Status code: ", status_code(response))
+  }
   
-  # Filter for PTEN variants in ClinVar
-  geneinfo_data <- info(vcf_clinvar)$GENEINFO
-  pten_variants <- grepl("PTEN", geneinfo_data, ignore.case = TRUE)
-  vcf_pten <- vcf_clinvar[pten_variants, ]
+  data <- content(response, "parsed")
+  variants <- data$data$region$variants
   
-  # Extract information from ClinVar VCF
-  info_pten <- info(vcf_pten)
-  pten_info <- as.data.frame(info_pten)
+  if (is.null(variants)) {
+    warning("No variants found in gnomAD for this region.")
+    return(data.frame())
+  }
   
-  gr_pten <- rowRanges(vcf_pten)
-  pten_gr <- as.data.frame(gr_pten)
+  # Process gnomAD data
+  variant_list <- lapply(variants, function(variant) {
+    data.frame(
+      variant_id = ifelse(!is.null(variant$variant_id), variant$variant_id, NA),
+      ref = ifelse(!is.null(variant$ref), variant$ref, NA),
+      alt = ifelse(!is.null(variant$alt), variant$alt, NA),
+      flags = ifelse(!is.null(variant$flags), paste(variant$flags, collapse = ","), NA),
+      ac = ifelse(!is.null(variant$joint$ac), variant$joint$ac, NA),
+      an = ifelse(!is.null(variant$joint$an), variant$joint$an, NA),
+      filters = ifelse(!is.null(variant$joint$filters), paste(variant$joint$filters, collapse = ","), NA),
+      faf95_max = ifelse(!is.null(variant$joint$fafmax$faf95_max), variant$joint$fafmax$faf95_max, NA),
+      faf95_max_gen_anc = ifelse(!is.null(variant$joint$fafmax$faf95_max_gen_anc), variant$joint$fafmax$faf95_max_gen_anc, NA)
+    )
+  })
   
-  pten_df <- cbind(pten_info, pten_gr)
+  gnomad_df <- do.call(rbind, variant_list)
+  gnomad_df$chrom <- chrom
+  gnomad_df$start <- start
+  gnomad_df$stop <- stop
   
-  # ---- 3. Query CADD data for PTEN region ----
-  # Open the CADD file with TabixFile
-  tabix_file <- TabixFile(cadd_file_path)
+  # Load ClinVar data
+  clinvar_vcf <- readVcf(clinvar_vcf_path, "hg38")
+  clinvar_df <- as.data.frame(info(clinvar_vcf))
+  clinvar_df <- clinvar_df[clinvar_df$CLNDN == gene, ]
   
-  # Query the CADD file for the PTEN region on chromosome 10
-  cadd_data <- scanTabix(tabix_file, param = rng_pten)
+  # Load CADD data
+  cadd_df <- read.csv(cadd_file_path, sep = "\t", header = TRUE)
+  cadd_df_filtered <- subset(cadd_df, CHROM == chrom & POS >= start & POS <= stop)
   
-  # Convert the extracted data into a dataframe
-  cadd_df <- read.table(text = unlist(cadd_data), header = FALSE, sep = "\t")
+  # Merge datasets
+  combined_df <- merge(gnomad_df, clinvar_df, by.x = "variant_id", by.y = "ID", all.x = TRUE)
+  combined_df <- merge(combined_df, cadd_df_filtered, by.x = "variant_id", by.y = "ID", all.x = TRUE)
   
-  # Change the column names so that they match for merging
-  colnames(cadd_df) <- c("CHROM", "start", "REF", "ALT", "RawScore", "PHRED")
-  
-  # Create merge column for CADD
-  cadd_df$merge <- paste(cadd_df$start, cadd_df$REF, cadd_df$ALT, sep = " ")
-  
-  # ---- 4. Merge gnomAD, ClinVar, and CADD data ----
-  # Prepare ClinVar data
-  pten_df$alt_values <- sapply(pten_df$ALT, function(x) as.character(x))
-  pten_df$merge <- paste(pten_df$start, pten_df$REF, pten_df$alt_values, sep = " ")
-  
-  # Merge gnomAD and ClinVar data (outer join)
-  combined_data <- merge(pten_df, gnomad_df, by = "merge", all = TRUE)
-  
-  # Merge with CADD data (left join to preserve all ClinVar + gnomAD data)
-  final_combined_data <- merge(combined_data, cadd_df, by = "merge", all.x = TRUE)
-  
-  # Return the final combined data
-  return(final_combined_data)
+  return(combined_df)
 }
 
-# Example Usage:
-gnomad_url <- "https://gnomad.broadinstitute.org/api/variant/"
-clinvar_vcf_path <- "F:/Capstone/Resources/ClinVar/clinvar.vcf.gz"
-cadd_file_path <- "F:/Capstone/Resources/CADD/v1.7/whole_genome_SNVs.tsv.gz"
 
-# Get the combined data for PTEN gene on chr10
-pten_combined_data <- combine_pten_data(gnomad_url, clinvar_vcf_path, cadd_file_path)
+# Example usage
+gnomad_url <- "https://gnomad.broadinstitute.org/api"
+clinvar_vcf_path <- "path/to/clinvar.vcf.gz"
+cadd_file_path <- "path/to/cadd.tsv"
 
-# Print the resulting dataframe
-print(pten_combined_data)
+gene_combined_data <- combine_gene_data("PTEN", "chr10", 87863114, 87971941, gnomad_url, clinvar_vcf_path, cadd_file_path)
+head(gene_combined_data)
