@@ -318,7 +318,7 @@ path_benign$fake_y = sample(path_benign$PHRED)
 logistic_model <- glm(pathogenic ~ PHRED, data = path_benign_wf, family = binomial())
 
 # Balancing distribution between regular and synthetic and data (DIDN'T WORK)
-# library(ROSE)
+# library(ROSE) - use for binary imbalance
 # install.packages("ROSE")
 # path_benign_combined <- rbind(path_benign, synthetic_data)
 # ggplot(path_benign_combined, aes(x = PHRED, fill = as.factor(pathogenic))) +
@@ -346,7 +346,6 @@ any(is.na(path_benign_wf$PHRED))  # Ensure there are no missing values
 
 lasso_model <- cv.glmnet(X, y, family = "binomial", alpha = 1) # alpha = 1 for Lasso
 
-
 #final_combined_data_2$pathogenic <- factor(final_combined_data_2$pathogenic, levels = c(-1, 0, 1))
 
 #multinomial_model <- multinom(pathogenic ~ PHRED, data = final_combined_data_2)
@@ -354,9 +353,58 @@ lasso_model <- cv.glmnet(X, y, family = "binomial", alpha = 1) # alpha = 1 for L
 # Model summary
 summary(logistic_model)
 
+# Using SMOTE to balance data
+install.packages("smotefamily")
+install.packages("caret")
+install.packages("nnet")
+library(smotefamily)
+library(caret)
+library(nnet)
 
+# Convert data frame to numeric to insert into SMOTE
+# path_benign_wf$pathogenic_num <- as.numeric(path_benign_wf$pathogenic)
+#your_column <- factor(c(1, 0))
+# Correct conversion
+#numeric_column <- as.numeric(levels(your_column))[your_column]
+#print(numeric_column)
+path_benign_wf_num <- path_benign_wf[, sapply(path_benign_wf, is.numeric)] # convert all columns
+#path_benign_wf_num$pathogenic_num <- as.numeric(levels(path_benign_wf$pathogenic))[path_benign_wf$pathogenic] # only convert pathogenic columns so levels stay correct
 
+# if (is.factor(path_benign_wf$pathogenic)) {
+#   # Convert the factor column `pathogenic` to numeric without altering its original numeric values
+#   path_benign_wf$pathogenic_num <- as.numeric(levels(path_benign_wf$pathogenic))[path_benign_wf$pathogenic]
+# } else {
+#   # If `pathogenic` is already numeric, copy it directly
+#   path_benign_wf$pathogenic_num <- path_benign_wf$pathogenic
+# }
 
+# # Step 1: Convert `pathogenic` factor to numeric without altering original numeric values
+# path_benign_wf$pathogenic_num <- as.numeric(levels(path_benign_wf$pathogenic))[path_benign_wf$pathogenic]
+# 
+# # Step 2: Replace -1 values with 0
+# path_benign_wf$pathogenic_num[path_benign_wf$pathogenic_num == -1] <- 0
+# 
+# # Verify the result
+# table(path_benign_wf$pathogenic_num)  # Check the distribution
+
+# Check for NAs after conversion
+sum(is.na(path_benign_wf_num$pathogenic_num))
+sum(is.na(path_benign_wf_num$PHRED))
+
+# Keep only relevant columns
+path_benign_wf_num = subset(path_benign_wf_num, select = c(pathogenic_num, PHRED))
+
+smote_results <- SMOTE(X = path_benign_wf_num, target = path_benign_wf_num$pathogenic_num, K = 5, dup_size = 0)
+
+# Combine results into one data frame to input into logistic regression 
+oversampled_data <- data.frame(smote_results$data)
+oversampled_data$pathogenic_num[oversampled_data$pathogenic_num == -1] <- 0
+
+# Build a binomial logistic regression model using CADD PHRED score using new SMOTE dataset
+logistic_model_SMOTE <- glm(pathogenic_num ~ PHRED, data = oversampled_data, family = binomial())
+
+summary(logistic_model_SMOTE)
+table(oversampled_data$pathogenic_num)
 
 
 
