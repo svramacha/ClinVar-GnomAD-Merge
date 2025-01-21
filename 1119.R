@@ -1,5 +1,4 @@
 ## SET UP 
-
 exonfile <- 'C:/Users/sramachandran/Documents/GitHub/Capstone_2024/Resources/CodingLocs_hg38.rds'
 readRDS(exonfile)
 exonpositions <- readRDS(exonfile)
@@ -27,7 +26,7 @@ library(GenomicRanges)
 library(dplyr)
 
 # Define region of interest
-  # Specific for CHR 22
+# Specific for CHR 22
 rng <- GRanges(seqnames="chr22", ranges=IRanges(
   start=c(50301422, 50989541), 
   end=c(50312106, 51001328),
@@ -268,3 +267,4 @@ final_combined_data <- merge(
   by = "merge", 
   all.x = TRUE  # Keep all rows from combined_inner_join
 )
+
