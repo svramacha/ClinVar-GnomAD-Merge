@@ -125,7 +125,10 @@ final_combined_data_2 <- final_combined_data_2 %>%
 table(final_combined_data_2$pathogenic)
 str(final_combined_data_2$pathogenic)
 
-# Same assingment as above with faf_cutoof (didn't run this)
+# Same assingment as above with faf_cutoff (didn't run)
+faf_cutoff <- 10^-4
+prop_path <- 0.4
+
 final_combined_data_2 <- final_combined_data_2 %>%
   mutate(
     pathogenic = ifelse(
@@ -150,7 +153,15 @@ lm_data <- final_combined_data_2 %>%
   filter(pathogenic != 0)
 
 # Build a logistic regression model using CADD PHRED score
-logistic_model <- glm(pathogenic ~ PHRED, data = final_combined_data_2, family = binomial())
+# Filter the dataset - filter this before hand in the final combined data part (move this up)
+filtered_data <- final_combined_data_2 %>%
+  filter(!is.na(PHRED))
+
+# Create new dataset (path/benign) filtering out 0's
+path_benign <- filtered_data %>%
+  filter(pathogenic != 0) %>% mutate(pathogenic=factor(pathogenic, levels = c("-1","1"))) 
+
+logistic_model <- glm(pathogenic ~ PHRED, data = path_benign, family = binomial())
 
 # Model summary
 summary(logistic_model)
