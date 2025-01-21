@@ -238,8 +238,16 @@ unique(final_combined_data_2$CLNSIG)
 
 # Recode pathogenicity (1 for Pathogenic/Likely pathogenic, -1 for Benign/Likely benign, and 0 for VUS/uncertain)
 # Assigns "pathogenic" variants first, then "benign", and if neither then as "VUS"
+
+
+#change 
+faf_cutoff <- 10^-4
+prop_path <- 0.4
+
+# Recode pathogenicity (1 for Pathogenic/Likely pathogenic, 0 for others)
+
 final_combined_data_2 <- final_combined_data_2 %>%
-  mutate(
+  mutate(pathogenic = 0,  
     pathogenic = ifelse(
       CLNSIG %in% c("Pathogenic", "Likely_pathogenic", "Pathogenic/Likely_pathogenic"), 
       1, 
@@ -254,8 +262,52 @@ final_combined_data_2 <- final_combined_data_2 %>%
 # Check data summary
 table(final_combined_data_2$pathogenic)
 str(final_combined_data_2$pathogenic)
+      CLNSIG %in% c("Pathogenic", "Likely_pathogenic", "Pathogenic/Likely_pathogenic")
+      1
+      pathogenic 
+    pathogenic = ifelse(
+      CLNSIG %in% c("Benign", "Likely_benign", "Benign/Likely_benign"),
+      -1,
+      pathogenic) 
+    pathogenic = ifelse(
+      is.na(CLNSIG) & FAFmax_faf95_max_joint > faf_cutoff, 
+      -1, 
+      pathogenic 
+    )
+    
+# Clinsig is NA - then it is benign 
+# cutoff for gnomad freq will be an argument 
+  
 
-# Filter the dataset
+# Check data summary
+table(final_combined_data_2$pathogenic)
+
+
+# Weighted
+
+# First regression preformed for begnin/pathogenic - have to create a seperate df for this regression 
+# create lm model data 
+# take out anything = 0 
+lm_data <- final_combined_data_2 %>%
+  filter(pathogenic != 0)
+
+# create the weights - ratio of the frequency of 
+# line 577/585 analysis_functions
+# total number of observations 
+# cases = pathogenic (1), control = bengin (-1)
+# set prop_path = 0.4 - if i took a random position and changed the allele - prob that it would become pathogenic 
+# also will have to do something similar to line 597 
+
+# line 625 has the glm with the weight in it 
+
+# Build a logistic regression model using CADD PHRED score
+logistic_model <- glm(pathogenic ~ PHRED, data = final_combined_data_2, family = binomial())
+
+# Model summary
+summary(logistic_model)
+
+
+# Filter the dataset - filter this before hand in the final combined data part (move this up)
 filtered_data <- final_combined_data_2 %>%
   filter(!is.na(PHRED))
 
