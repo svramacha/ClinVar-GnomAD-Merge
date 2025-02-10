@@ -132,6 +132,7 @@ query <- '{"query": "{ datasets { name description } }"}'
 response <- POST(url, body = query, encode = "raw", content_type_json())
 content <- content(response, "parsed")
 print(content)
+print(response)
 
 # Query with API and save into dataframe 
 query <- '
