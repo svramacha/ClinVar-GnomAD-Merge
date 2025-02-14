@@ -3,6 +3,11 @@
 library(dplyr)
 library(ggplot2)
 library(pROC)
+library(GenomicRanges)
+library(Rsamtools)
+library(VariantAnnotation)
+
+
 
 # Define region of interest
 # Specific for CHR 10
@@ -155,8 +160,9 @@ table(final_combined_data_2$pathogenic, final_combined_data_2$FILTER.y)
 # Assign the one's w/o faf_max or CLNSIG as 0 -- done
 # Only keep FILTER = PASS in gnomad_fixed (check if these with > faf_cutoff end up as 0) -- filtered but unsure if they assigned as 0
 filter_path <- final_combined_data_2 %>%
-  filter(FILTER.y == "PASS", FAFmax_faf95_max_joint > faf_cutoff) %>%
-  select(merge, pathogenic)  # Replace variant_id_column with your actual variant identifier column
+  dplyr::filter(FILTER.y == "PASS", FAFmax_faf95_max_joint > faf_cutoff) %>%
+  dplyr::select(merge, pathogenic)
+
 table(filter_path$pathogenic)
 
 
@@ -188,146 +194,167 @@ summary(logistic_model)
 # Visualize results with a boxplot
 boxplot(PHRED ~ pathogenic, data = path_benign, main = "PHRED by Pathogenicity")
 
-# Adding in weights
-total_obs <- sum(!is.na(filtered_data$pathogenic)) #24176
-n_case <- sum(filtered_data$pathogenic == 1, na.rm=T) #439
-n_cont <- sum(filtered_data$pathogenic == -1, na.rm=T) #3364
-
-w_case <- total_obs * prop_path / n_case #2.202825
-w_cntl <- total_obs * (1 - prop_path) / n_cont #6.899215
-
-## observed data (dis / benign) (remove VUS/uncertain which are listed as NAs)
-# Filter it so that pathogenic is either -1 (benign) or 1 (pathogenic) >> removing uncertain variants
-d_observed <- filtered_data %>% dplyr::filter(!pathogenic == 0) %>%
-  dplyr::mutate(w = ifelse(pathogenic == 1, w_case, w_cntl)) #28481 observations
 
 
-## calculate AUC values and get data to make ROC curves
-#tmp <- AUCs <- auc_imputation(d_observed, d_unc)
-#AUCs <- tmp$aucs
-#roc_data <- tmp$roc_data
-
-model_estimates <- list()
-model_estimates_noweight <- list()
-model_estimates_weight <- list()
+### Weighted logistic regression 
 
 
-annot <- "PHRED"
-# Doesn't need to be a loop since we're only using CADD (annot = CADD)
-#for (annot in c("CADD")){
+
+prob_imputation <- function(data, prop_path){
   
-## ############################
-## Perform weighted logistic regression to get parameter estimate
-## and estimate probability that uncertain variants are pathogenic
-## ############################
+  # Adding in weights 
+  total_obs <- sum(!is.na(filtered_data$pathogenic)) #24176
+  n_case <- sum(filtered_data$pathogenic == 1, na.rm=T) #439
+  n_cont <- sum(filtered_data$pathogenic == -1, na.rm=T) #3364
+
+  w_case <- total_obs * prop_path / n_case #2.202825
+  w_cntl <- total_obs * (1 - prop_path) / n_cont #6.899215
   
-# Converting pathogenic variable to factor with levels -1 (benign) and 1 (pathogenic)
-d_obs <- d_observed %>% dplyr::select(all_of(c("merge", annot, "pathogenic", "w"))) %>%
-  mutate(pathogenic=factor(pathogenic, levels = c("-1","1"))) 
-
-# Formula string where pathogenic is dependent variable and annot is independent variable
-formula <- paste("pathogenic ~", annot)
+  ## number of imputations used to come up with estimates of logistics regression 
+  ## parameters.
+  n_imputations = 25
   
-# Converting the string to an actual formula
-formula <- as.formula(formula)
+  ## all data
+  data_all <- data
   
-# Adjust pathogenic variable to keep the 1 as 1 and change the -1 to 0
-d_obs <- d_obs %>%
-  dplyr::mutate(pathogenic = as.numeric(ifelse(pathogenic == "-1", 0, as.character(pathogenic))))
+  ## observed data (dis / benign) (remove VUS/uncertain which are listed as NAs)
+  # Filter it so that pathogenic is either -1 (benign) or 1 (pathogenic) >> removing uncertain variants
+  d_observed <- filtered_data %>% dplyr::filter(!pathogenic == 0) %>%
+    dplyr::mutate(w = ifelse(pathogenic == 1, w_case, w_cntl)) #28481 observations
   
-# Run logistic regression model with weights
-# Model is predicting "pathogenic" based on "annot" or PHRED
-model <- glm(formula, data = d_obs, family="binomial", weights=w) 
-#model <- glm(formula, data = d_obs, family="binomial")  
-
-
-# Can stay as binomial because there are no weights 
-# Run logistic regression without weights >> all observations are treated equally
-# Allows us to see how much the weights affect the model and use as means of comparison 
-model_noweight <- glm(formula, data = d_obs, family="binomial") 
-
-
-## Estimate probably uncertain variants are pathogenic
-
-## uncertain data () containing the uncertain variants 
-d_unc <- filtered_data %>% dplyr::filter(pathogenic == 0) #should this be filtered to anything that = 0
-
-# get rid of all columns besides merge, prob_disease)
-colnames(d_unc)
-d_unc <- d_unc %>% select(merge, pathogenic, PHRED)
-
-# Use this to assign imputations a 1 or -1
-# Uses the logistic regression model to predict probability of being pathogenic for uncertain variants 
-# prob_disease is probability of pathogenic variant
-d_unc$prob_disease <- predict(model, newdata = d_unc, type = "response") #look at plot of pathogenic vs PHRED
-
-# Clean up d_unc again
-d_unc <- d_unc %>% select(merge, prob_disease)
-
-
-## reweight for the probabilistic imputation for uncertain variants that now have a probability
-# known benign and pathogenic get a weight of 1 (highest weight you can have bc we're confident)
-data_all <- filtered_data #replace with filtered_data 
-d_all <- data_all %>% dplyr::mutate(weight = 1) # creates new column called weight and sets all rows = 1
-d_all <- left_join(d_all, d_unc, by = "merge") #left join with filtered data
-# d_all <- d_all %>%
-#   mutate(
-#     pathogenic = coalesce(pathogenic.x, pathogenic.y),
-#     PHRED = coalesce(PHRED.x, PHRED.y)
-#   ) %>%
-#   select(-pathogenic.x, -pathogenic.y, -PHRED.x, -PHRED.y)
-  # Remove the old columns if needed
-
-
-#d_all <- left_join(d_all, d_unc, join_by(merge)) # dataframe with uncertain predictions -- will give prob_disease a value of NA if there isn't a value from the model
-#d_all <- d_all %>% dplyr::mutate(weight = ifelse(pathogenic.x == 0, abs(prob_disease - .5)*2, weight)) #change to pathogenic == 0
-
-# would be -0.5 or 0.5 if confident that variant is benign or pathogenic
-# want to see how close it is to 1 >> essentially turning it into a confidence
-d_all <- d_all %>%
-  dplyr::mutate(weight = ifelse(pathogenic == 0, abs(prob_disease - 0.5) * 2, weight)) #0.5 is lowest weight you can have
-
-
-## number of imputations used to come up with estimates of logistics regression parameters.
-n_imputations = 25
-models <- vector("list", n_imputations) # Store models
-#aucs <- numeric(n_imputations) # Store AUC imputation
-
+  ## uncertain data () containing the uncertain variants 
+  d_unc <- filtered_data %>% dplyr::filter(pathogenic == 0) #should this be filtered to anything that = 0
   
-## perform naive estimates
-model_estimates_weight <- list(params = summary(model)$coef[,1],
-                                        cov = vcov(model),
-                                        t = summary(model)$coef[,3],
-                                        p = summary(model)$coef[,4])
-  # 
-  # model_estimates_noweight[[annot]] <- list(params = summary(model_noweight)$coef[,1],
-  #                                           cov = vcov(model_noweight), 
-  #                                           t = summary(model_noweight)$coef[,3], 
-  #                                           p = summary(model_noweight)$coef[,4])
-plot_data <- c()
+  
+  ## calculate AUC values and get data to make ROC curves
+  #tmp <- AUCs <- auc_imputation(d_observed, d_unc)
+  #AUCs <- tmp$aucs
+  #roc_data <- tmp$roc_data
+  
+  model_estimates <- list()
+  model_estimates_noweight <- list()
+  model_estimates_weight <- list()
+  plot_data <- c()
 
-for (i in 1:n_imputations) {
-    print(i)
-    # Assuming 'df' has columns: 'predictor', 'classification' (NA for uncertain), 'prob_pathogenic'
-    d_imp <- d_all
+#annot <- "PHRED"
+
+  for (annot in c("PHRED")){
+    # Doesn't need to be a loop since we're only using CADD (annot = CADD)
+    #for (annot in c("CADD")){
+      
+    ## ############################
+    ## Perform weighted logistic regression to get parameter estimate
+    ## and estimate probability that uncertain variants are pathogenic
+    ## ############################
+      
+    # Converting pathogenic variable to factor with levels -1 (benign) and 1 (pathogenic)
+    d_obs <- d_observed %>% dplyr::select(all_of(c("merge", annot, "pathogenic", "w"))) %>%
+      mutate(pathogenic=factor(pathogenic, levels = c("-1","1"))) 
+
+  # Formula string where pathogenic is dependent variable and annot is independent variable
+  formula <- paste("pathogenic ~", annot)
     
-    # Assigning probabilistic classifications
-    # Assigning pathogenic value where pathogenic = 0 
-    # Going to randomly assign a 0 or 1 where pathogenic = 0
-    # Sum of weights should be equal to number of pathogenic variants 
-    # Results should be similar to original logistic regression 
-    #### not finding pathogenic variable
-#d_imp <- d_imp %>% rowwise() %>%
-    #dplyr::mutate(pathogenic = ifelse(pathogenic == 0, rbinom(1, 1, prob_disease), pathogenic)) #should we convert back to -1, 0, 1
+  # Converting the string to an actual formula
+  formula <- as.formula(formula)
+    
+  # Adjust pathogenic variable to keep the 1 as 1 and change the -1 to 0
+  d_obs <- d_obs %>%
+    dplyr::mutate(pathogenic = as.numeric(ifelse(pathogenic == "-1", 0, as.character(pathogenic))))
+    
+  # Run logistic regression model with weights
+  # Model is predicting "pathogenic" based on "annot" or PHRED
+  model <- glm(formula, data = d_obs, family="binomial", weights=w) 
+  #model <- glm(formula, data = d_obs, family="binomial")  
+  
+  
+  # Can stay as binomial because there are no weights 
+  # Run logistic regression without weights >> all observations are treated equally
+  # Allows us to see how much the weights affect the model and use as means of comparison 
+  model_noweight <- glm(formula, data = d_obs, family="binomial") 
 
-# reintroduce 0 and 1 (-1 turns to 0) 
-    d_imp <- d_imp %>% 
-      rowwise() %>%
-      mutate(pathogenic = ifelse(!is.na(prob_disease), rbinom(1, 1, prob_disease), pathogenic),
-             pathogenic = ifelse(pathogenic == -1, 0, pathogenic)) %>%
-      ungroup()  # remove pathogenic == 0
-    
-    
+
+  ## Estimate probably uncertain variants are pathogenic
+  
+  ## uncertain data () containing the uncertain variants 
+  d_unc <- filtered_data %>% dplyr::filter(pathogenic == 0) #should this be filtered to anything that = 0
+  
+  # get rid of all columns besides merge, prob_disease)
+  colnames(d_unc)
+  d_unc <- d_unc %>% dplyr::select(merge, pathogenic, PHRED)
+  
+  # Use this to assign imputations a 1 or -1
+  # Uses the logistic regression model to predict probability of being pathogenic for uncertain variants 
+  # prob_disease is probability of pathogenic variant
+  d_unc$prob_disease <- predict(model, newdata = d_unc, type = "response") #look at plot of pathogenic vs PHRED
+  
+  # Clean up d_unc again
+  d_unc <- d_unc %>% dplyr::select(merge, prob_disease)
+
+
+  ## reweight for the probabilistic imputation for uncertain variants that now have a probability
+  # known benign and pathogenic get a weight of 1 (highest weight you can have bc we're confident)
+  data_all <- filtered_data #replace with filtered_data 
+  d_all <- data_all %>% dplyr::mutate(weight = 1) # creates new column called weight and sets all rows = 1
+  d_all <- left_join(d_all, d_unc, by = "merge") #left join with filtered data
+  # d_all <- d_all %>%
+  #   mutate(
+  #     pathogenic = coalesce(pathogenic.x, pathogenic.y),
+  #     PHRED = coalesce(PHRED.x, PHRED.y)
+  #   ) %>%
+  #   dplyr::select(-pathogenic.x, -pathogenic.y, -PHRED.x, -PHRED.y)
+  
+    # Remove the old columns if needed (I didn't)
+
+
+  #d_all <- left_join(d_all, d_unc, join_by(merge)) # dataframe with uncertain predictions -- will give prob_disease a value of NA if there isn't a value from the model
+  #d_all <- d_all %>% dplyr::mutate(weight = ifelse(pathogenic.x == 0, abs(prob_disease - .5)*2, weight)) #change to pathogenic == 0
+  
+  # would be -0.5 or 0.5 if confident that variant is benign or pathogenic
+  # want to see how close it is to 1 >> essentially turning it into a confidence
+  d_all <- d_all %>%
+    dplyr::mutate(weight = ifelse(pathogenic == 0, abs(prob_disease - 0.5) * 2, weight)) #0.5 is lowest weight you can have
+  
+  
+  ## number of imputations used to come up with estimates of logistics regression parameters.
+  n_imputations = 25
+  models <- vector("list", n_imputations) # Store models
+  #aucs <- numeric(n_imputations) # Store AUC imputation
+
+  
+  ## perform naive estimates
+  model_estimates_weight <- list(params = summary(model)$coef[,1],
+                                          cov = vcov(model),
+                                          t = summary(model)$coef[,3],
+                                          p = summary(model)$coef[,4])
+    # 
+    # model_estimates_noweight[[annot]] <- list(params = summary(model_noweight)$coef[,1],
+    #                                           cov = vcov(model_noweight), 
+    #                                           t = summary(model_noweight)$coef[,3], 
+    #                                           p = summary(model_noweight)$coef[,4])
+  plot_data <- c()
+
+  for (i in 1:n_imputations) {
+      print(i)
+      # Assuming 'df' has columns: 'predictor', 'classification' (NA for uncertain), 'prob_pathogenic'
+      d_imp <- d_all
+      
+      # Assigning probabilistic classifications
+      # Assigning pathogenic value where pathogenic = 0 
+      # Going to randomly assign a 0 or 1 where pathogenic = 0
+      # Sum of weights should be equal to number of pathogenic variants 
+      # Results should be similar to original logistic regression 
+      #### not finding pathogenic variable
+  #d_imp <- d_imp %>% rowwise() %>%
+      #dplyr::mutate(pathogenic = ifelse(pathogenic == 0, rbinom(1, 1, prob_disease), pathogenic)) #should we convert back to -1, 0, 1
+
+  # reintroduce 0 and 1 (-1 turns to 0) 
+      d_imp <- d_imp %>% 
+        rowwise() %>%
+        mutate(pathogenic = ifelse(!is.na(prob_disease), rbinom(1, 1, prob_disease), pathogenic),
+               pathogenic = ifelse(pathogenic == -1, 0, pathogenic)) %>%
+        ungroup()  # remove pathogenic == 0
+      
+      
     
     # Fit the weighted logistic regression model
     # Using above data to fit logistic regression with weights defined from confidence from pathogenic label
@@ -352,52 +379,69 @@ for (i in 1:n_imputations) {
  
 
 
-# STOPPED HERE
+  ## #####
+  ## COMBINE INFORMATION ACCROSS IMPUTATIONS
+  ## #####
+  
+  # Placeholder for aggregated variance-covariance matrices
+  vcov_within <- matrix(0, nrow = length(models[[1]]$coefficients), ncol = length(models[[1]]$coefficients))
+  vcov_between <- matrix(0, nrow = length(models[[1]]$coefficients), ncol = length(models[[1]]$coefficients))
+  
+  # Calculate W and B
+  for(i in 1:n_imputations) {
+    vcov_within <- vcov_within + vcov(models[[i]])
+  }
+  vcov_within <- vcov_within / n_imputations
+  
+  beta_bar <- sapply(models, function(x) coef(x)) %>% rowMeans
+  for (i in 1:n_imputations) {
+    diff <- matrix(coef(models[[i]]) - beta_bar, ncol = length(beta_bar))
+    vcov_between <- vcov_between + (t(diff) %*% diff)
+  }
+  vcov_between <- vcov_between / (n_imputations - 1)
+  
+  # Calculate T
+  vcov_total <- vcov_within + (1 + 1/length(models)) * vcov_between
+  
+  # T and P-value
+  t_stat <- beta_bar / sqrt(diag(vcov_total))
+  p_value <- 2 * pt(-abs(t_stat), df = length(models) - 1)
+  
+  model_estimates[[annot]] <- list(params = beta_bar, cov = vcov_total, t = t_stat, p = p_value)
+  
+  
+  }
+
+
+  # model_estimates will then be used to create the table
+  
+  return(list(model_estimates = model_estimates, 
+              #model_estimates_noweight = model_estimates_noweight, 
+              model_estimates_weight = model_estimates_weight, 
+              #aucs =AUCs, 
+              #roc_data = roc_data, 
+              plot_data = plot_data))
+  }
 
 
 
-## #####
-## COMBINE INFORMATION ACCROSS IMPUTATIONS
-## #####
-
-# Placeholder for aggregated variance-covariance matrices
-vcov_within <- matrix(0, nrow = length(models[[1]]$coefficients), ncol = length(models[[1]]$coefficients))
-vcov_between <- matrix(0, nrow = length(models[[1]]$coefficients), ncol = length(models[[1]]$coefficients))
-
-# Calculate W and B
-for(i in 1:n_imputations) {
-  vcov_within <- vcov_within + vcov(models[[i]])
-}
-vcov_within <- vcov_within / n_imputations
-
-beta_bar <- sapply(models, function(x) coef(x)) %>% rowMeans
-for (i in 1:n_imputations) {
-  diff <- matrix(coef(models[[i]]) - beta_bar, ncol = length(beta_bar))
-  vcov_between <- vcov_between + (t(diff) %*% diff)
-}
-vcov_between <- vcov_between / (n_imputations - 1)
-
-# Calculate T
-vcov_total <- vcov_within + (1 + 1/length(models)) * vcov_between
-
-# T and P-value
-t_stat <- beta_bar / sqrt(diag(vcov_total))
-p_value <- 2 * pt(-abs(t_stat), df = length(models) - 1)
-
-model_estimates[[annot]] <- list(params = beta_bar, cov = vcov_total, t = t_stat, p = p_value)
 
 
 
 
-# model_estimates will then be used to create the table
 
-return(list(model_estimates = model_estimates, 
-            #model_estimates_noweight = model_estimates_noweight, 
-            model_estimates_weight = model_estimates_weight, 
-            #aucs =AUCs, 
-            #roc_data = roc_data, 
-            plot_data = plot_data))
-}
+
+
+
+### STOPPED HERE
+
+
+
+
+
+
+
+
 
 #auc_imputation <- function(d_obs, d_unc, annot, p_train=.8, n_imp=200){
   
@@ -517,6 +561,21 @@ return(list(model_estimates = model_estimates,
 }
 
 #Threshold Table
+
+## #################
+## INCORPORATE UNCERTAIN VARIANTS USING IMPUTATION
+## ################
+prop_path_update <- gnomad$prob_path_update # estimate of proportion of pathogenic variants (just use 0.04 for now) 
+prop_path_update <- 0.04
+tmp <- prob_imputation(data, prop_path = prop_path_update)
+
+est_perm <- tmp$model_estimates
+est_noweight <- tmp$model_estimates_noweight
+est_weight <- tmp$model_estimates_weight
+aucs <- tmp$aucs
+roc_data <- tmp$roc_data
+plot_data <- tmp$plot_data
+
 acmg_table_impute <- function(est_perm, data, prop_path, file="acmg_table_impute.txt"){
   
   rslts <- c()
@@ -533,21 +592,82 @@ acmg_table_impute <- function(est_perm, data, prop_path, file="acmg_table_impute
       stop()
     }
     
-## #################
-## INCORPORATE UNCERTAIN VARIANTS USING IMPUTATION
-## ################
-tmp <- prob_imputation(data, prop_path = prop_path_update)
+    ## calc se of log odds ##
+    var_adj <- ifelse(var_type == "path", 1, -1)
+    se_log_odds <- sqrt(t(c(1, x)) %*% v %*% c(1, x)) # Standard error
+    z <- qnorm(.95)
+    logodds_bound <- (beta[1] + beta[2]*x) - var_adj * z * se_log_odds
+    odds_bound <- exp( var_adj * logodds_bound)
+    odds_path = odds_path^var_adj
+    
+    return(cutoff - odds_bound / odds_path)
+  }
+  
+  for (i in 1:4){
+    
+    betas = est_perm[[i]]$params
+    v = est_perm[[i]]$cov
+    cat = names(est_perm)[i]
+    int <- betas[1]
+    logor <- betas[2] 
+    p <- est_perm[[i]]$p[2]
+    se_int <- sqrt(v[1,1])
+    se_logor <- sqrt(v[2,2])
+    
+    rng <- range(data[, cat])
+    lower = -50; upper = 50
+    #if (i == 4){ lower = 0; upper=1} ## alphamissense
+    
+    for (j in 1:length(cutoffs)){
+      cutoff <- cutoffs[j]
+      
+      #minimize_func_path <- function(x){ return( cutoff - exp(int + x*lor)/odds_path) }
+      #minimize_func_ben <- function(x){ return( cutoff -  exp(-(int + x*lor))*odds_path) }
+      
+      result <- tryCatch({
+        uniroot(min_func, lower = lower, upper = upper, beta=betas, v = v,  
+                cutoff = cutoff, odds_path = odds_path, var_type = "path")
+      }, error = function(e){
+        cat("No satisfying threshold was able to be found for:\n")
+        cat(cat, " using cutoff: ", cutoff, " for pathogenic variant\n")
+        return(list(root = NA))
+      })
+      
+      rslts <- rbind(rslts, c(cat, int, logor, se_int, se_logor, p, 
+                              "pathogenic", cutlabel[j], result$root, rng))
+      
+      result <- tryCatch({
+        uniroot(min_func, lower = lower, upper = upper, beta=betas, v = v,
+                cutoff = cutoff, odds_path = odds_path, var_type = "benign")
+      }, error = function(e){
+        cat("No satisfying threshold was able to be found for:\n")
+        cat(cat, " using cutoff: ", cutoff, " for benign variant\n")
+        return(list(root = NA))
+      })
+      rslts <- rbind(rslts, c(cat, int, logor, se_int, se_logor, p, 
+                              "benign", cutlabel[j], result$root, rng))
+    }       
+  }
+  
+  rslts <- as.data.frame(rslts, stringsAsFactors=F)
+  names(rslts) <- c("annot", "int", "logor", "se_int", "se_logor", "pval", "var_type", 
+                    "acmg_cat", "annot_value", "min_obs", "max_obs")
+  
+  tbl <- rslts %>% tidyr::pivot_wider(names_from=c("var_type","acmg_cat"),
+                                      values_from="annot_value",
+                                      names_glue = "{var_type}_{acmg_cat}") %>%
+    dplyr::select(annot, int, logor, se_int, se_logor, pval, 
+                  starts_with("pathogenic"), starts_with("benign"),
+                  min_obs, max_obs)
+  
+  
+  write.table(file = file, tbl, quote=F, row.names=F, col.names=T, sep="\t")
+  cat("Wrote threshold for different ACMG support categories to", file, "\n")
+  
+  return(tbl)
+}
 
-est_perm <- tmp$model_estimates
-est_noweight <- tmp$model_estimates_noweight
-est_weight <- tmp$model_estimates_weight
-aucs <- tmp$aucs
-roc_data <- tmp$roc_data
-plot_data <- tmp$plot_data
 
-# Add weights to this model once you get it working (only path and benign)
-# Next weighted log regression model (this will use the path, benign, and VUS)
-
-
-
-
+    
+    
+    
