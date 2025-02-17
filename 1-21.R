@@ -667,7 +667,111 @@ acmg_table_impute <- function(est_perm, data, prop_path, file="acmg_table_impute
   return(tbl)
 }
 
+## #################
+## Sneha Threshold Table 
+## ################
+    
+### STEP 1: Define Pathogenicity Proportion for Weighting
+prop_path_update <- 0.04  # Estimated proportion of pathogenic variants
 
+### STEP 2: Run Weighted Logistic Regression with Imputation
+tmp <- prob_imputation(filtered_data, prop_path = prop_path_update)
+
+### STEP 3: Extract Model Results
+est_perm <- tmp$model_estimates  # Required for ACMG threshold calculation
+
+est_noweight <- tmp$model_estimates_noweight  # Optional (comparison without weights)
+est_weight <- tmp$model_estimates_weight  # Optional (comparison with weights)
+aucs <- tmp$aucs  # Optional (check model performance)
+roc_data <- tmp$roc_data  # Optional (ROC curve data)
+plot_data <- tmp$plot_data  # Optional (Pathogenicity visualization)
+
+### STEP 4: Compute ACMG Thresholds
+calculate_thresholds <- function(est_perm, filtered_data, prop_path, file="acmg_table_impute.txt") {
+  
+  rslts <- c()
+  cutoffs <- c(2.406, 5.790, 33.53, 1124)  # ACMG cutoffs
+  cutlabel <- c("supporting", "moderate", "strong", "very_strong") 
+  pD <- prop_path
+  odds_path <- pD / (1 - pD)
+  
+  # Function to compute pathogenicity thresholds
+  min_func <- function(x, beta, v, cutoff, odds_path, var_type) {
+    if (!var_type %in% c("path", "benign")) {
+      stop("var_type must be 'path' or 'benign'")
+    }
     
+    var_adj <- ifelse(var_type == "path", 1, -1)  # Adjust based on pathogenic or benign
+    se_log_odds <- sqrt(t(c(1, x)) %*% v %*% c(1, x))  # Compute standard error
+    z <- qnorm(.95)  # 95% CI
+    logodds_bound <- (beta[1] + beta[2] * x) - var_adj * z * se_log_odds
+    odds_bound <- exp(var_adj * logodds_bound)
+    odds_path <- odds_path^var_adj
     
+    return(cutoff - odds_bound / odds_path)
+  }
+  
+  # Iterate over annotation scores (only PHRED in your case)
+  for (annot in c("PHRED")) {
+    
+    betas <- est_perm[[annot]]$params
+    v <- est_perm[[annot]]$cov
+    int <- betas[1]   # Intercept
+    logor <- betas[2]  # Log odds ratio
+    p <- est_perm[[annot]]$p[2] # P-value
+    se_int <- sqrt(v[1, 1])
+    se_logor <- sqrt(v[2, 2])
+    
+    rng <- range(filtered_data[[annot]], na.rm = TRUE)  # Find PHRED range
+    lower <- min(rng) 
+    upper <- max(rng)  
+    
+    # Loop through ACMG categories
+    for (j in seq_along(cutoffs)) {
+      cutoff <- cutoffs[j]
+      
+      # Compute pathogenic threshold
+      result <- tryCatch({
+        uniroot(min_func, lower = lower, upper = upper, beta = betas, v = v,  
+                cutoff = cutoff, odds_path = odds_path, var_type = "path")
+      }, error = function(e) list(root = NA))
+      
+      rslts <- rbind(rslts, c(annot, int, logor, se_int, se_logor, p, 
+                              "pathogenic", cutlabel[j], result$root, rng))
+      
+      # Compute benign threshold
+      result <- tryCatch({
+        uniroot(min_func, lower = lower, upper = upper, beta = betas, v = v,
+                cutoff = cutoff, odds_path = odds_path, var_type = "benign")
+      }, error = function(e) list(root = NA))
+      
+      rslts <- rbind(rslts, c(annot, int, logor, se_int, se_logor, p, 
+                              "benign", cutlabel[j], result$root, rng))
+    }       
+  }
+  
+  # Convert to dataframe
+  rslts <- as.data.frame(rslts, stringsAsFactors = FALSE)
+  names(rslts) <- c("annot", "int", "logor", "se_int", "se_logor", "pval", "var_type", 
+                    "acmg_cat", "annot_value", "min_obs", "max_obs")
+  
+  # Reshape for readability
+  tbl <- rslts %>% tidyr::pivot_wider(names_from = c("var_type", "acmg_cat"),
+                                      values_from = "annot_value",
+                                      names_glue = "{var_type}_{acmg_cat}") %>%
+    dplyr::select(annot, int, logor, se_int, se_logor, pval, 
+                  starts_with("pathogenic"), starts_with("benign"),
+                  min_obs, max_obs)
+  
+  # Save table to file
+  write.table(file = file, tbl, quote = FALSE, row.names = FALSE, col.names = TRUE, sep = "\t")
+  cat("Wrote ACMG threshold table to", file, "\n")
+  
+  return(tbl)
+}
+
+### STEP 5: Run ACMG Threshold Calculation
+threshold_table <- calculate_thresholds(est_perm, filtered_data, prop_path_update)
+
+print(threshold_table)    
     
