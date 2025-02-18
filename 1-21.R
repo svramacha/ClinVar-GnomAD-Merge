@@ -773,5 +773,41 @@ calculate_thresholds <- function(est_perm, filtered_data, prop_path, file="acmg_
 ### STEP 5: Run ACMG Threshold Calculation
 threshold_table <- calculate_thresholds(est_perm, filtered_data, prop_path_update)
 
-print(threshold_table)    
-    
+print(threshold_table)
+
+
+## #################
+## Ideas to show results
+## ################
+
+# Heat Map for Thresholds 
+
+install.packages("reshape2")
+library(reshape2)
+library(ggplot2)
+
+# Convert threshold table values to numeric (except "annot" column)
+threshold_melt <- melt(threshold_table, id.vars = "annot")
+threshold_melt$value <- as.numeric(as.character(threshold_melt$value))
+
+# Plot heatmap
+ggplot(threshold_melt, aes(x = variable, y = annot, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "blue", high = "red") +
+  labs(title = "ACMG Pathogenicity Thresholds", x = "ACMG Category", y = "Annotation Score") +
+  theme_minimal()
+
+## Logistic Regression Model Preformance
+summary(tmp$model_estimates$PHRED)
+
+roc_curve <- roc(path_benign$pathogenic, predict(tmp$model_estimates$PHRED, newdata = path_benign, type="response"))
+
+ggplot(data = data.frame(FPR = roc_curve$specificities, TPR = roc_curve$sensitivities), 
+       aes(x = FPR, y = TPR)) +
+  geom_line(color = "blue") +
+  geom_abline(linetype="dashed", color="red") +
+  labs(title = "ROC Curve for Pathogenicity Prediction",
+       x = "False Positive Rate", y = "True Positive Rate")
+
+auc_value <- auc(roc_curve)
+print(paste("AUC:", auc_value))
