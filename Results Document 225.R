@@ -40,8 +40,6 @@ ggplot(final_combined_data_2, aes(x = PHRED, fill = Source, color = Source)) +
 
 # 
 
-
-
 ### Table 1: Mean pathogenicity prediction scores and areas under the receiver operating curve for Benign and Pathogenic variants  
 
 library(dplyr)
@@ -80,6 +78,105 @@ print(phred_summary_table)
 
 
 #### Table 3: Estimated score threshold intervals for the four pathogenicity prediction tools evaluated in this study as they relate to the different pathogenic and benign strength levels 
+
+### STEP 4: Compute ACMG Thresholds with Corrected Ranges
+calculate_thresholds <- function(est_perm, filtered_data, prop_path, file="acmg_table_impute.txt") {
+  
+  rslts <- c()
+  cutoffs <- c(2.406, 5.790, 33.53, 1124)  # ACMG cutoffs
+  cutlabel <- c("supporting", "moderate", "strong", "very_strong") 
+  pD <- prop_path
+  odds_path <- pD / (1 - pD)
+  
+  min_func <- function(x, beta, v, cutoff, odds_path, var_type) {
+    if (!var_type %in% c("path", "benign")) {
+      stop("var_type must be 'path' or 'benign'")
+    }
+    
+    var_adj <- ifelse(var_type == "path", 1, -1)
+    se_log_odds <- sqrt(t(c(1, x)) %*% v %*% c(1, x)) 
+    z <- qnorm(.95) 
+    logodds_bound <- (beta[1] + beta[2] * x) - var_adj * z * se_log_odds
+    odds_bound <- exp(var_adj * logodds_bound)
+    odds_path <- odds_path^var_adj
+    
+    return(cutoff - odds_bound / odds_path)
+  }
+  
+  for (annot in c("PHRED")) {
+    
+    betas <- est_perm[[annot]]$params
+    v <- est_perm[[annot]]$cov
+    int <- betas[1]   
+    logor <- betas[2]  
+    p <- est_perm[[annot]]$p[2] 
+    se_int <- sqrt(v[1, 1])
+    se_logor <- sqrt(v[2, 2])
+    
+    rng <- range(filtered_data[[annot]], na.rm = TRUE)  
+    lower <- min(rng) 
+    upper <- max(rng)  
+    
+    path_thresholds <- c()
+    benign_thresholds <- c()
+    
+    for (j in seq_along(cutoffs)) {
+      cutoff <- cutoffs[j]
+      
+      # Compute pathogenic thresholds
+      result <- tryCatch({
+        uniroot(min_func, lower = lower, upper = upper, beta = betas, v = v,  
+                cutoff = cutoff, odds_path = odds_path, var_type = "path")
+      }, error = function(e) list(root = NA))
+      
+      path_thresholds[j] <- result$root
+      
+      # Compute benign thresholds
+      result <- tryCatch({
+        uniroot(min_func, lower = lower, upper = upper, beta = betas, v = v,
+                cutoff = cutoff, odds_path = odds_path, var_type = "benign")
+      }, error = function(e) list(root = NA))
+      
+      benign_thresholds[j] <- result$root
+    }
+    
+    # Ensure benign thresholds are sorted in increasing order
+    benign_thresholds <- sort(benign_thresholds)
+    
+    # Ensure pathogenic thresholds are sorted in increasing order
+    path_thresholds <- sort(path_thresholds)
+    
+    # Format into ranges
+    phred_threshold_table <- data.frame(
+      Tool = "PHRED",
+      `Very Strong Benign` = paste("≤", round(benign_thresholds[1], 2)),
+      `Strong Benign` = paste("(", round(benign_thresholds[1], 2), ",", round(benign_thresholds[2], 2), "]"),
+      `Moderate Benign` = paste("(", round(benign_thresholds[2], 2), ",", round(benign_thresholds[3], 2), "]"),
+      `Supporting Benign` = paste("(", round(benign_thresholds[3], 2), ",", round(benign_thresholds[4], 2), "]"),
+      `Supporting Pathogenic` = paste("[", round(path_thresholds[1], 2), ",", round(path_thresholds[2], 2), ")"),
+      `Moderate Pathogenic` = paste("[", round(path_thresholds[2], 2), ",", round(path_thresholds[3], 2), ")"),
+      `Strong Pathogenic` = paste("≥", round(path_thresholds[3], 2)),
+      `Very Strong Pathogenic` = "—"
+    )
+    
+    # Print and save table
+    print(phred_threshold_table)
+    write.table(file = file, phred_threshold_table, quote = FALSE, row.names = FALSE, col.names = TRUE, sep = "\t")
+  }
+  
+  cat("Wrote ACMG threshold table to", file, "\n")
+  
+  return(phred_threshold_table)
+}
+
+### STEP 5: Run ACMG Threshold Calculation
+threshold_table <- calculate_thresholds(est_perm, filtered_data, prop_path_update)
+
+print(threshold_table)
+
+
+# the other threshold table
+# dont look at this
 
 library(dplyr)
 
