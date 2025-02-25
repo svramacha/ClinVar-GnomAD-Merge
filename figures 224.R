@@ -112,4 +112,4 @@ ggplot(final_combined_data_2, aes(x = PHRED, fill = Source, color = Source)) +
         axis.title = element_text(size = 14),
         panel.grid.minor = element_blank())  # Remove minor grid lines for a cleaner look
 
-# 
+

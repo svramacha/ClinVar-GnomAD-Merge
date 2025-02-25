@@ -175,6 +175,144 @@ threshold_table <- calculate_thresholds(est_perm, filtered_data, prop_path_updat
 print(threshold_table)
 
 
+### Threshold visual: 
+
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+
+# Ensure thresholds are numeric
+benign_thresholds <- c(6.44, 12.5, 15.52, 17.01)
+path_thresholds <- c(20.69, 22.06, 24.93)
+
+# Define custom color palette
+custom_colors <- c("Benign" = "#99CCFF",  # Light Blue
+                   "Pathogenic" = "#FFB6C1",  # Light Pink,
+                   "Thresholds" = "#B2D8B2")  # Light Green for thresholds
+
+# Create a structured dataset
+plot_data <- data.frame(
+  Classification = factor(c(
+    "Very Strong Benign", "Strong Benign", "Moderate Benign", "Supporting Benign",
+    "Supporting Pathogenic", "Moderate Pathogenic", "Strong Pathogenic"
+  ), levels = rev(c(  # Reverse order so that stronger pathogenicity appears on top
+    "Very Strong Benign", "Strong Benign", "Moderate Benign", "Supporting Benign",
+    "Supporting Pathogenic", "Moderate Pathogenic", "Strong Pathogenic"
+  ))),
+  Min = c(
+    0, benign_thresholds[1], benign_thresholds[2], benign_thresholds[3], 
+    path_thresholds[1], path_thresholds[2], path_thresholds[3]
+  ),
+  Max = c(
+    benign_thresholds[1], benign_thresholds[2], benign_thresholds[3], benign_thresholds[4], 
+    path_thresholds[2], path_thresholds[3], 30  # Ensuring the last value isn't Inf
+  ),
+  Category = c(
+    "Benign", "Benign", "Benign", "Benign", 
+    "Pathogenic", "Pathogenic", "Pathogenic"
+  )
+)
+
+# Format range labels correctly: ( Min , Max ]
+plot_data$Label <- paste0("( ", round(plot_data$Min, 2), " , ", round(plot_data$Max, 2), " ]")
+
+# Create the styled horizontal range plot
+ggplot(plot_data, aes(y = Classification)) +
+  # Add range bars (same color as dots)
+  geom_segment(aes(x = Min, xend = Max, y = Classification, yend = Classification, color = Category),
+               size = 3) +  # Increased size for better visibility
+  # Add diverging dots at Min and Max
+  geom_point(aes(x = Min, y = Classification, color = Category), size = 5) +
+  geom_point(aes(x = Max, y = Classification, color = Category), size = 5) +
+  # Add range labels next to the bars (slightly to the right of max value)
+  geom_text(aes(x = Max + 1, y = Classification, label = Label), 
+            size = 4, hjust = 0, color = "black") +  
+  # Customize colors
+  scale_color_manual(values = custom_colors) +
+  # Extend x-axis limit to 35
+  scale_x_continuous(limits = c(0, 35)) +  
+  # Labels and theme
+  labs(title = "ACMG Threshold Classification Ranges",
+       x = "CADD Score",  
+       y = "Classification") +
+  theme_minimal() +
+  theme(
+    legend.position = "top", 
+    legend.title = element_blank(),
+    axis.title.x = element_text(size = 14, face = "bold"),  
+    axis.title.y = element_text(size = 14, face = "bold"),  
+    axis.text.y = element_text(size = 12)
+  )
+
+####
+
+### dont use this one !!!! 
+
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+
+# Ensure thresholds are numeric
+benign_thresholds <- c(6.44, 12.5, 15.52, 17.01)
+path_thresholds <- c(20.69, 22.06, 24.93)
+
+# Define custom color palette
+custom_colors <- c("Benign" = "#99CCFF",  # Light Blue
+                   "Pathogenic" = "#FFB6C1",  # Light Pink
+                   "Thresholds" = "#B2D8B2")  # Light Green for thresholds
+
+# Ensure thresholds are numeric
+benign_thresholds <- c(6.44, 12.5, 15.52, 17.01)
+path_thresholds <- c(20.69, 22.06, 24.93)
+
+# Create a structured dataset
+plot_data <- data.frame(
+  Classification = factor(c(
+    "Very Strong Benign", "Strong Benign", "Moderate Benign", "Supporting Benign",
+    "Supporting Pathogenic", "Moderate Pathogenic", "Strong Pathogenic"
+  ), levels = rev(c(  # Reverse order so that stronger pathogenicity appears on top
+    "Very Strong Benign", "Strong Benign", "Moderate Benign", "Supporting Benign",
+    "Supporting Pathogenic", "Moderate Pathogenic", "Strong Pathogenic"
+  ))),
+  Min = c(
+    0, benign_thresholds[1], benign_thresholds[2], benign_thresholds[3], 
+    path_thresholds[1], path_thresholds[2], path_thresholds[3]
+  ),
+  Max = c(
+    benign_thresholds[1], benign_thresholds[2], benign_thresholds[3], benign_thresholds[4], 
+    path_thresholds[2], path_thresholds[3], Inf
+  ),
+  Category = c(
+    "Benign", "Benign", "Benign", "Benign", 
+    "Pathogenic", "Pathogenic", "Pathogenic"
+  )
+)
+
+# Format range labels correctly: ( Min , Max ]
+plot_data$Label <- paste0("( ", round(plot_data$Min, 2), " , ", round(plot_data$Max, 2), " ]")
+
+# Create the styled horizontal range plot
+ggplot(plot_data, aes(y = Classification)) +
+  # Add range bars (same color as dots)
+  geom_segment(aes(x = Min, xend = Max, y = Classification, yend = Classification, color = Category),
+               size = 2) +  
+  # Add diverging dots at Min and Max
+  geom_point(aes(x = Min, y = Classification, color = Category), size = 4) +
+  geom_point(aes(x = Max, y = Classification, color = Category), size = 4) +
+  # Add range labels next to the bars (slightly to the right of max value)
+  geom_text(aes(x = Max + 2, y = Classification, label = Label), 
+            size = 3, hjust = 0, color = "black") +  
+  # Customize colors
+  scale_color_manual(values = custom_colors) +
+  # Labels and theme
+  labs(title = "ACMG Threshold Classification Ranges",
+       x = "CADD Score",  # Changed from PHRED to CADD
+       y = "Classification") +
+  theme_minimal() +
+  theme(legend.position = "top", legend.title = element_blank())
+
+
+
 # the other threshold table
 # dont look at this
 
