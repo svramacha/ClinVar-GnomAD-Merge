@@ -703,6 +703,7 @@ auc_imputation <- function(d_obs, d_unc, annot, p_train=.8, n_imp=200){
 #Threshold Table
 
 ## #################
+<<<<<<< HEAD
 ## INCORPORATE UNCERTAIN VARIANTS USING IMPUTATION
 ## ################
 prop_path_update <- gnomad$prob_path_update # estimate of proportion of pathogenic variants (just use 0.04 for now) 
@@ -739,10 +740,52 @@ acmg_table_impute <- function(est_perm, data, prop_path, file="acmg_table_impute
     logodds_bound <- (beta[1] + beta[2]*x) - var_adj * z * se_log_odds
     odds_bound <- exp( var_adj * logodds_bound)
     odds_path = odds_path^var_adj
+=======
+## Sneha Threshold Table 
+## ################
+    
+### STEP 1: Define Pathogenicity Proportion for Weighting
+prop_path_update <- 0.04  # Estimated proportion of pathogenic variants
+
+### STEP 2: Run Weighted Logistic Regression with Imputation
+tmp <- prob_imputation(filtered_data, prop_path = prop_path_update)
+
+### STEP 3: Extract Model Results
+est_perm <- tmp$model_estimates  # Required for ACMG threshold calculation
+
+est_noweight <- tmp$model_estimates_noweight  # Optional (comparison without weights)
+est_weight <- tmp$model_estimates_weight  # Optional (comparison with weights)
+aucs <- tmp$aucs  # Optional (check model performance)
+roc_data <- tmp$roc_data  # Optional (ROC curve data)
+plot_data <- tmp$plot_data  # Optional (Pathogenicity visualization)
+
+### STEP 4: Compute ACMG Thresholds
+calculate_thresholds <- function(est_perm, filtered_data, prop_path, file="acmg_table_impute.txt") {
+  
+  rslts <- c()
+  cutoffs <- c(2.406, 5.790, 33.53, 1124)  # ACMG cutoffs
+  cutlabel <- c("supporting", "moderate", "strong", "very_strong") 
+  pD <- prop_path
+  odds_path <- pD / (1 - pD)
+  
+  # Function to compute pathogenicity thresholds
+  min_func <- function(x, beta, v, cutoff, odds_path, var_type) {
+    if (!var_type %in% c("path", "benign")) {
+      stop("var_type must be 'path' or 'benign'")
+    }
+    
+    var_adj <- ifelse(var_type == "path", 1, -1)  # Adjust based on pathogenic or benign
+    se_log_odds <- sqrt(t(c(1, x)) %*% v %*% c(1, x))  # Compute standard error
+    z <- qnorm(.95)  # 95% CI
+    logodds_bound <- (beta[1] + beta[2] * x) - var_adj * z * se_log_odds
+    odds_bound <- exp(var_adj * logodds_bound)
+    odds_path <- odds_path^var_adj
+>>>>>>> fbc16e7b564b02a8abbf47a818e2f3b5b9e65019
     
     return(cutoff - odds_bound / odds_path)
   }
   
+<<<<<<< HEAD
   for (i in 1:4){
     
     betas = est_perm[[i]]$params
@@ -785,27 +828,187 @@ acmg_table_impute <- function(est_perm, data, prop_path, file="acmg_table_impute
         return(list(root = NA))
       })
       rslts <- rbind(rslts, c(cat, int, logor, se_int, se_logor, p, 
+=======
+  # Iterate over annotation scores (only PHRED for now)
+  for (annot in c("PHRED")) {
+    
+    betas <- est_perm[[annot]]$params
+    v <- est_perm[[annot]]$cov
+    int <- betas[1]   # Intercept
+    logor <- betas[2]  # Log odds ratio
+    p <- est_perm[[annot]]$p[2] # P-value
+    se_int <- sqrt(v[1, 1])
+    se_logor <- sqrt(v[2, 2])
+    
+    rng <- range(filtered_data[[annot]], na.rm = TRUE)  # Find PHRED range
+    lower <- min(rng) 
+    upper <- max(rng)  
+    
+    # Loop through ACMG categories
+    for (j in seq_along(cutoffs)) {
+      cutoff <- cutoffs[j]
+      
+      # Compute pathogenic threshold
+      result <- tryCatch({
+        uniroot(min_func, lower = lower, upper = upper, beta = betas, v = v,  
+                cutoff = cutoff, odds_path = odds_path, var_type = "path")
+      }, error = function(e) list(root = NA))
+      
+      rslts <- rbind(rslts, c(annot, int, logor, se_int, se_logor, p, 
+                              "pathogenic", cutlabel[j], result$root, rng))
+      
+      # Compute benign threshold
+      result <- tryCatch({
+        uniroot(min_func, lower = lower, upper = upper, beta = betas, v = v,
+                cutoff = cutoff, odds_path = odds_path, var_type = "benign")
+      }, error = function(e) list(root = NA))
+      
+      rslts <- rbind(rslts, c(annot, int, logor, se_int, se_logor, p, 
+>>>>>>> fbc16e7b564b02a8abbf47a818e2f3b5b9e65019
                               "benign", cutlabel[j], result$root, rng))
     }       
   }
   
+<<<<<<< HEAD
   rslts <- as.data.frame(rslts, stringsAsFactors=F)
   names(rslts) <- c("annot", "int", "logor", "se_int", "se_logor", "pval", "var_type", 
                     "acmg_cat", "annot_value", "min_obs", "max_obs")
   
   tbl <- rslts %>% tidyr::pivot_wider(names_from=c("var_type","acmg_cat"),
                                       values_from="annot_value",
+=======
+  # Convert to dataframe
+  rslts <- as.data.frame(rslts, stringsAsFactors = FALSE)
+  names(rslts) <- c("annot", "int", "logor", "se_int", "se_logor", "pval", "var_type", 
+                    "acmg_cat", "annot_value", "min_obs", "max_obs")
+  
+  # Reshape for readability
+  tbl <- rslts %>% tidyr::pivot_wider(names_from = c("var_type", "acmg_cat"),
+                                      values_from = "annot_value",
+>>>>>>> fbc16e7b564b02a8abbf47a818e2f3b5b9e65019
                                       names_glue = "{var_type}_{acmg_cat}") %>%
     dplyr::select(annot, int, logor, se_int, se_logor, pval, 
                   starts_with("pathogenic"), starts_with("benign"),
                   min_obs, max_obs)
   
+<<<<<<< HEAD
   
   write.table(file = file, tbl, quote=F, row.names=F, col.names=T, sep="\t")
   cat("Wrote threshold for different ACMG support categories to", file, "\n")
+=======
+  # Save table to file
+  write.table(file = file, tbl, quote = FALSE, row.names = FALSE, col.names = TRUE, sep = "\t")
+  cat("Wrote ACMG threshold table to", file, "\n")
+>>>>>>> fbc16e7b564b02a8abbf47a818e2f3b5b9e65019
   
   return(tbl)
 }
+
+<<<<<<< HEAD
+=======
+### STEP 5: Run ACMG Threshold Calculation
+threshold_table <- calculate_thresholds(est_perm, filtered_data, prop_path_update)
+
+print(threshold_table)
+>>>>>>> fbc16e7b564b02a8abbf47a818e2f3b5b9e65019
+
+## #################
+## CI of Threshold Table 
+## ################
+
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+
+# Define number of imputations
+n_imputations <- 25  # Number of imputed datasets
+
+# Store model results across imputations
+beta_values <- numeric(n_imputations)
+se_values <- numeric(n_imputations)
+
+# Ensure prob_disease is calculated from Model 1
+filtered_data <- filtered_data %>%
+  mutate(prob_disease = predict(logistic_model, newdata = filtered_data, type = "response"))
+
+# Ensure weight column is correctly assigned
+filtered_data <- filtered_data %>%
+  mutate(weight = ifelse(pathogenic == 1, 1, ifelse(pathogenic == -1, 1, abs(prob_disease - 0.5) * 2)))
+
+# Loop over imputations, running logistic regression for each one
+for (i in 1:n_imputations) {
+  
+  # Create a new imputed dataset by assigning probabilistic classifications to VUS
+  d_imp <- filtered_data %>%
+    rowwise() %>%
+    mutate(pathogenic = ifelse(!is.na(prob_disease), rbinom(1, 1, prob_disease), pathogenic),
+           pathogenic = ifelse(pathogenic == -1, 0, pathogenic)) %>%
+    ungroup()
+  
+  # Ensure weight column is present in imputed dataset
+  d_imp <- d_imp %>%
+    mutate(weight = ifelse(pathogenic == 1, 1, ifelse(pathogenic == 0, abs(prob_disease - 0.5) * 2, 1)))
+  
+  # Fit weighted logistic regression
+  model <- glm(pathogenic ~ PHRED, family = binomial, data = d_imp, weights = weight)
+  
+  # Extract beta coefficient and standard error for PHRED
+  beta_values[i] <- coef(model)["PHRED"]
+  se_values[i] <- summary(model)$coefficients["PHRED", "Std. Error"]
+}
+
+# Calculate the mean beta coefficient across imputations
+beta_avg <- mean(beta_values)
+
+# Calculate within-imputation variance (W)
+var_within <- mean(se_values^2)
+
+# Calculate between-imputation variance (B)
+var_between <- var(beta_values)
+
+# Total variance using Rubin’s rules
+var_total <- var_within + (1 + (1/n_imputations)) * var_between
+
+# Compute 95% Confidence Interval
+z_value <- 1.96  # For 95% CI
+lower_CI <- beta_avg - z_value * sqrt(var_total)
+upper_CI <- beta_avg + z_value * sqrt(var_total)
+
+# Print results
+cat("Beta Estimate for CADD PHRED (Weighted Model):", beta_avg, "\n")
+cat("95% Confidence Interval: (", lower_CI, ",", upper_CI, ")\n")
+
+# Plot the beta estimates across imputations
+ggplot(data.frame(beta_values), aes(x = beta_values)) +
+  geom_histogram(binwidth = 0.05, fill = "blue", alpha = 0.6, color = "black") +
+  labs(title = "Distribution of Beta Estimates Across Imputations",
+       x = "Beta Estimate", y = "Frequency") +
+  theme_minimal()
+
+
+
+
+## #################
+## Table/ Results Ideas
+## ################
+
+# Summary Statistics: Table 1
+
+summary_table <- data.frame(
+  Source = c("ClinVar", "gnomAD Benign"),
+  Variants_Before_Filtering = c(nrow(pten_df), nrow(gnomad_fixed)),  # Raw counts before merging
+  Variants_After_Filtering = c(
+    nrow(final_combined_data_2[!is.na(final_combined_data_2$CLNSIG),]),  # ClinVar variants after filtering
+    nrow(final_combined_data_2[is.na(final_combined_data_2$CLNSIG),])   # gnomAD variants after filtering
+  ),
+  Pathogenic = c(sum(final_combined_data_2$CLNSIG %in% c("Pathogenic", "Likely_pathogenic"), na.rm=TRUE), NA),
+  Benign = c(sum(final_combined_data_2$CLNSIG %in% c("Benign", "Likely_benign"), na.rm=TRUE), NA),
+  Uncertain = c(sum(final_combined_data_2$CLNSIG == "Uncertain", na.rm=TRUE), NA)
+)
+
+print(summary_table)
+
+
 
 
 
