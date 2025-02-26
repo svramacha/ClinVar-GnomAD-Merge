@@ -1,5 +1,5 @@
 ## SET UP 
-exonfile <- 'C:/Users/sramachandran/Documents/GitHub/Capstone_2024/Resources/CodingLocs_hg38.rds'
+exonfile <- '~/GitHub/Capstone_2024/Resources/CodingLocs_hg38.rds'
 
 readRDS(exonfile)
 exonpositions <- readRDS(exonfile)
