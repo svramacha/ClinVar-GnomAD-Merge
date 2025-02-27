@@ -175,38 +175,142 @@ threshold_table <- calculate_thresholds(est_perm, filtered_data, prop_path_updat
 print(threshold_table)
 
 
-# the other threshold table
-# dont look at this
+### Threshold visual: 
 
+# Load required libraries
+library(ggplot2)
 library(dplyr)
 
-# Filter out missing PHRED values
-filtered_data <- final_combined_data_2 %>%
-  filter(!is.na(PHRED))
+# Ensure thresholds are numeric
+benign_thresholds <- c(6.44, 12.5, 15.52, 17.01)
+path_thresholds <- c(20.69, 22.06, 24.93)
 
-# Separate benign (-1) and pathogenic (1) variants
-benign_scores <- filtered_data$PHRED[filtered_data$pathogenic == -1]
-pathogenic_scores <- filtered_data$PHRED[filtered_data$pathogenic == 1]
+# Define custom color palette
+custom_colors <- c("Benign" = "#99CCFF",  # Light Blue
+                   "Pathogenic" = "#FFB6C1",  # Light Pink,
+                   "Thresholds" = "#B2D8B2")  # Light Green for thresholds
 
-# Define threshold percentiles (adjustable based on biological interpretation)
-benign_thresholds <- quantile(benign_scores, probs = c(0, 0.25, 0.50, 0.75, 1), na.rm = TRUE)
-pathogenic_thresholds <- quantile(pathogenic_scores, probs = c(0, 0.25, 0.50, 0.75, 1), na.rm = TRUE)
-
-# Create a table similar to Table 3
-phred_threshold_table <- data.frame(
-  Tool = "PHRED",
-  `Very Strong Benign` = paste("≤", round(benign_thresholds[2], 2)),  # 0-25% quantile
-  `Strong Benign` = paste("(", round(benign_thresholds[2], 2), ",", round(benign_thresholds[3], 2), "]"),
-  `Moderate Benign` = paste("(", round(benign_thresholds[3], 2), ",", round(benign_thresholds[4], 2), "]"),
-  `Supporting Benign` = paste("(", round(benign_thresholds[4], 2), ",", round(benign_thresholds[5], 2), "]"),
-  `Supporting Pathogenic` = paste("[", round(pathogenic_thresholds[2], 2), ",", round(pathogenic_thresholds[3], 2), ")"),
-  `Moderate Pathogenic` = paste("[", round(pathogenic_thresholds[3], 2), ",", round(pathogenic_thresholds[4], 2), ")"),
-  `Strong Pathogenic` = paste("≥", round(pathogenic_thresholds[4], 2)),
-  `Very Strong Pathogenic` = "—"
+# Create a structured dataset
+plot_data <- data.frame(
+  Classification = factor(c(
+    "Very Strong Benign", "Strong Benign", "Moderate Benign", "Supporting Benign",
+    "Supporting Pathogenic", "Moderate Pathogenic", "Strong Pathogenic"
+  ), levels = rev(c(  # Reverse order so that stronger pathogenicity appears on top
+    "Very Strong Benign", "Strong Benign", "Moderate Benign", "Supporting Benign",
+    "Supporting Pathogenic", "Moderate Pathogenic", "Strong Pathogenic"
+  ))),
+  Min = c(
+    0, benign_thresholds[1], benign_thresholds[2], benign_thresholds[3], 
+    path_thresholds[1], path_thresholds[2], path_thresholds[3]
+  ),
+  Max = c(
+    benign_thresholds[1], benign_thresholds[2], benign_thresholds[3], benign_thresholds[4], 
+    path_thresholds[2], path_thresholds[3], 30  # Ensuring the last value isn't Inf
+  ),
+  Category = c(
+    "Benign", "Benign", "Benign", "Benign", 
+    "Pathogenic", "Pathogenic", "Pathogenic"
+  )
 )
 
-# Print the table
-print(phred_threshold_table)
+# Format range labels correctly: ( Min , Max ]
+plot_data$Label <- paste0("( ", round(plot_data$Min, 2), " , ", round(plot_data$Max, 2), " ]")
+
+# Create the styled horizontal range plot
+ggplot(plot_data, aes(y = Classification)) +
+  # Add range bars (same color as dots)
+  geom_segment(aes(x = Min, xend = Max, y = Classification, yend = Classification, color = Category),
+               size = 3) +  # Increased size for better visibility
+  # Add diverging dots at Min and Max
+  geom_point(aes(x = Min, y = Classification, color = Category), size = 5) +
+  geom_point(aes(x = Max, y = Classification, color = Category), size = 5) +
+  # Add range labels next to the bars (slightly to the right of max value)
+  geom_text(aes(x = Max + 1, y = Classification, label = Label), 
+            size = 4, hjust = 0, color = "black") +  
+  # Customize colors
+  scale_color_manual(values = custom_colors) +
+  # Extend x-axis limit to 35
+  scale_x_continuous(limits = c(0, 35)) +  
+  # Labels and theme
+  labs(title = "ACMG Threshold Classification Ranges",
+       x = "CADD Score",  
+       y = "Classification") +
+  theme_minimal() +
+  theme(
+    legend.position = "top", 
+    legend.title = element_blank(),
+    axis.title.x = element_text(size = 14, face = "bold"),  
+    axis.title.y = element_text(size = 14, face = "bold"),  
+    axis.text.y = element_text(size = 12)
+  )
+
+####
+
+### dont use this one !!!! 
+
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+
+# Ensure thresholds are numeric
+benign_thresholds <- c(6.44, 12.5, 15.52, 17.01)
+path_thresholds <- c(20.69, 22.06, 24.93)
+
+# Define custom color palette
+custom_colors <- c("Benign" = "#99CCFF",  # Light Blue
+                   "Pathogenic" = "#FFB6C1",  # Light Pink
+                   "Thresholds" = "#B2D8B2")  # Light Green for thresholds
+
+# Ensure thresholds are numeric
+benign_thresholds <- c(6.44, 12.5, 15.52, 17.01)
+path_thresholds <- c(20.69, 22.06, 24.93)
+
+# Create a structured dataset
+plot_data <- data.frame(
+  Classification = factor(c(
+    "Very Strong Benign", "Strong Benign", "Moderate Benign", "Supporting Benign",
+    "Supporting Pathogenic", "Moderate Pathogenic", "Strong Pathogenic"
+  ), levels = rev(c(  # Reverse order so that stronger pathogenicity appears on top
+    "Very Strong Benign", "Strong Benign", "Moderate Benign", "Supporting Benign",
+    "Supporting Pathogenic", "Moderate Pathogenic", "Strong Pathogenic"
+  ))),
+  Min = c(
+    0, benign_thresholds[1], benign_thresholds[2], benign_thresholds[3], 
+    path_thresholds[1], path_thresholds[2], path_thresholds[3]
+  ),
+  Max = c(
+    benign_thresholds[1], benign_thresholds[2], benign_thresholds[3], benign_thresholds[4], 
+    path_thresholds[2], path_thresholds[3], Inf
+  ),
+  Category = c(
+    "Benign", "Benign", "Benign", "Benign", 
+    "Pathogenic", "Pathogenic", "Pathogenic"
+  )
+)
+
+# Format range labels correctly: ( Min , Max ]
+plot_data$Label <- paste0("( ", round(plot_data$Min, 2), " , ", round(plot_data$Max, 2), " ]")
+
+# Create the styled horizontal range plot
+ggplot(plot_data, aes(y = Classification)) +
+  # Add range bars (same color as dots)
+  geom_segment(aes(x = Min, xend = Max, y = Classification, yend = Classification, color = Category),
+               size = 2) +  
+  # Add diverging dots at Min and Max
+  geom_point(aes(x = Min, y = Classification, color = Category), size = 4) +
+  geom_point(aes(x = Max, y = Classification, color = Category), size = 4) +
+  # Add range labels next to the bars (slightly to the right of max value)
+  geom_text(aes(x = Max + 2, y = Classification, label = Label), 
+            size = 3, hjust = 0, color = "black") +  
+  # Customize colors
+  scale_color_manual(values = custom_colors) +
+  # Labels and theme
+  labs(title = "ACMG Threshold Classification Ranges",
+       x = "CADD Score",  # Changed from PHRED to CADD
+       y = "Classification") +
+  theme_minimal() +
+  theme(legend.position = "top", legend.title = element_blank())
+
 
 #### Table 4: Number of predicted pathogenic and predicted benign variants at different strengths among the set of Uncertain variants 
 
@@ -252,7 +356,183 @@ print(phred_uncertain_df)
 # Print the table
 print(phred_uncertain_df)
 
+### Stacked Bar Plot for table 4: 
+
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(scales)  # For number formatting
+
+# Create a data frame based on your table
+classification_counts <- data.frame(
+  Category = c(rep("Benign (BP4)", 4), "Indeterminate", rep("Pathogenic (PP3)", 4)),
+  Subcategory = c("Very Strong", "Strong", "Moderate", "Supporting",
+                  "Indeterminate",
+                  "Supporting", "Moderate", "Strong", "Very Strong"),
+  Count = c(494, 102, 62, 63, 
+            82, 
+            98, 98, 362, 0)  # Use 0 instead of "—"
+)
+
+# Convert Category to a factor with a specific order
+classification_counts$Category <- factor(classification_counts$Category, 
+                                         levels = c("Benign (BP4)", "Indeterminate", "Pathogenic (PP3)"))
+
+# **Explicitly fix the stacking order**: Supporting → Moderate → Strong → Very Strong
+classification_counts$Subcategory <- factor(classification_counts$Subcategory, 
+                                            levels = c("Supporting", "Moderate", "Strong", "Very Strong", "Indeterminate"),
+                                            ordered = TRUE)  
+
+# **Combine Category and Subcategory to use in colors and labels**
+classification_counts <- classification_counts %>%
+  mutate(Combined = paste(Category, Subcategory, sep = " - "))
+
+# **Define Correct Color Mapping (Benign = Blue, Pathogenic = Red, Indeterminate = Gray)**
+custom_palette <- c(
+  # **Benign (BP4)**
+  "Benign (BP4) - Supporting"  = "#ADD8E6",  # Light Blue
+  "Benign (BP4) - Moderate"    = "#66B2FF",  # Medium Blue
+  "Benign (BP4) - Strong"      = "#3399FF",  # Darker Blue
+  "Benign (BP4) - Very Strong" = "#003366",  # Darkest Blue
+  
+  # **Indeterminate**
+  "Indeterminate - Indeterminate" = "#B2B2B2",  # Neutral Gray
+  
+  # **Pathogenic (PP3)**
+  "Pathogenic (PP3) - Supporting" = "#FFCCCC",  # Lightest Red
+  "Pathogenic (PP3) - Moderate"   = "#FF9999",  # Medium Red
+  "Pathogenic (PP3) - Strong"     = "#FF6666",  # Darker Red
+  "Pathogenic (PP3) - Very Strong"= "#FF3333"   # Darkest Red
+)
+
+# **Sort the dataset to ensure correct stacking order**
+classification_counts <- classification_counts %>%
+  arrange(Category, Subcategory)  # This ensures ggplot2 stacks bars correctly
+
+# **Create the vertical stacked bar plot with only counts inside the bars**
+ggplot(classification_counts, aes(x = Category, y = Count, fill = factor(Combined, levels = rev(names(custom_palette))))) +
+  geom_bar(stat = "identity", position = "stack", width = 0.7) +  # Stacked bars
+  geom_text(aes(label = ifelse(Count > 0, Count, "")),  # Label inside bars (only count)
+            position = position_stack(vjust = 0.5), size = 4, color = "black") +
+  scale_y_continuous(labels = comma) +  # Use normal numeric format for y-axis
+  scale_fill_manual(values = custom_palette, name = "Subcategory",
+                    breaks = rev(names(custom_palette)), guide = guide_legend(reverse = TRUE)) +  # Reverse legend order
+  labs(title = "Distribution of Variant Classifications",
+       subtitle = "Based on CADD Pathogenicity Predictions",
+       x = "Classification Category",
+       y = "Count of Variants") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(size = 12, face = "bold"),
+        axis.title.x = element_text(size = 14, face = "bold"),
+        axis.title.y = element_text(size = 14, face = "bold"),
+        legend.position = "right")
+
+# **Save the corrected plot**
+ggsave("Variant_Classification_StackedBar_CountsOnly.png", width = 8, height = 6, dpi = 300)
 
 
 
+########
+# Dont use for now 
+######## 
+
+# the other threshold table
+# dont look at this
+
+library(dplyr)
+
+# Filter out missing PHRED values
+filtered_data <- final_combined_data_2 %>%
+  filter(!is.na(PHRED))
+
+# Separate benign (-1) and pathogenic (1) variants
+benign_scores <- filtered_data$PHRED[filtered_data$pathogenic == -1]
+pathogenic_scores <- filtered_data$PHRED[filtered_data$pathogenic == 1]
+
+# Define threshold percentiles (adjustable based on biological interpretation)
+benign_thresholds <- quantile(benign_scores, probs = c(0, 0.25, 0.50, 0.75, 1), na.rm = TRUE)
+pathogenic_thresholds <- quantile(pathogenic_scores, probs = c(0, 0.25, 0.50, 0.75, 1), na.rm = TRUE)
+
+# Create a table similar to Table 3
+phred_threshold_table <- data.frame(
+  Tool = "PHRED",
+  `Very Strong Benign` = paste("≤", round(benign_thresholds[2], 2)),  # 0-25% quantile
+  `Strong Benign` = paste("(", round(benign_thresholds[2], 2), ",", round(benign_thresholds[3], 2), "]"),
+  `Moderate Benign` = paste("(", round(benign_thresholds[3], 2), ",", round(benign_thresholds[4], 2), "]"),
+  `Supporting Benign` = paste("(", round(benign_thresholds[4], 2), ",", round(benign_thresholds[5], 2), "]"),
+  `Supporting Pathogenic` = paste("[", round(pathogenic_thresholds[2], 2), ",", round(pathogenic_thresholds[3], 2), ")"),
+  `Moderate Pathogenic` = paste("[", round(pathogenic_thresholds[3], 2), ",", round(pathogenic_thresholds[4], 2), ")"),
+  `Strong Pathogenic` = paste("≥", round(pathogenic_thresholds[4], 2)),
+  `Very Strong Pathogenic` = "—"
+)
+
+# Print the table
+print(phred_threshold_table)
+
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(scales)  # For percent_format
+
+# Create a data frame based on your table
+classification_counts <- data.frame(
+  Category = c(rep("Benign (BP4)", 4), "Indeterminate", rep("Pathogenic (PP3)", 4)),
+  Subcategory = c("Very Strong", "Strong", "Moderate", "Supporting",
+                  "Indeterminate",
+                  "Supporting", "Moderate", "Strong", "Very Strong"),
+  Count = c(494, 102, 62, 63, 
+            82, 
+            98, 98, 362, 0)  # Use 0 in place of "—"
+)
+
+# Convert Category and Subcategory to factors with a specific order
+classification_counts$Category <- factor(classification_counts$Category, 
+                                         levels = c("Benign (BP4)", "Indeterminate", "Pathogenic (PP3)"))
+
+# For the purposes of coloring, combine Category and Subcategory so that identical subcategory names in different main categories are distinct.
+classification_counts <- classification_counts %>%
+  mutate(Combined = ifelse(Category == "Indeterminate",
+                           paste(Category, Subcategory, sep = " - "),
+                           paste(Category, Subcategory, sep = " - ")))
+
+# Calculate percentages within each Category
+classification_counts <- classification_counts %>%
+  group_by(Category) %>%
+  mutate(Percent = Count / sum(Count) * 100) %>%
+  ungroup()
+
+# Define custom color palette for each Combined level
+# (Benign: light blue shades, Indeterminate: gray, Pathogenic: light to dark red shades)
+custom_palette <- c(
+  "Benign (BP4) - Very Strong" = "#99CCFF",
+  "Benign (BP4) - Strong"      = "#66B2FF",
+  "Benign (BP4) - Moderate"    = "#3399FF",
+  "Benign (BP4) - Supporting"  = "#ADD8E6",
+  "Indeterminate - Indeterminate" = "#B2B2B2",
+  "Pathogenic (PP3) - Supporting" = "#FFCCCC",
+  "Pathogenic (PP3) - Moderate"   = "#FF9999",
+  "Pathogenic (PP3) - Strong"     = "#FF6666",
+  "Pathogenic (PP3) - Very Strong"= "#FF3333"
+)
+
+# Create the vertical stacked bar plot with counts & percentages
+ggplot(classification_counts, aes(x = Category, y = Count, fill = Combined)) +
+  geom_bar(stat = "identity", position = "stack", width = 0.7) +  # Stacked bar with counts
+  geom_text(aes(label = paste0(Count, " (", round(Percent, 1), "%)")),  # Show both counts & percentages
+            position = position_stack(vjust = 0.5), size = 4, color = "black") +  
+  scale_y_continuous(labels = comma) +  # Use normal numeric format for y-axis
+  scale_fill_manual(values = custom_palette) +
+  labs(title = "Distribution of Variant Classifications",
+       subtitle = "Based on CADD Pathogenicity Predictions",
+       x = "Classification Category",
+       y = "Count of Variants",
+       fill = "Subcategory") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(size = 12, face = "bold"),
+        axis.title.x = element_text(size = 14, face = "bold"),
+        axis.title.y = element_text(size = 14, face = "bold"),
+        legend.position = "right")
+
+# Optionally, save the plot
+ggsave("Variant_Classification_StackedBar.png", width = 8, height = 6, dpi = 300)
 
