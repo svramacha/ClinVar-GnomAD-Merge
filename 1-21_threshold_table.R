@@ -269,7 +269,7 @@ prob_imputation <- function(data, prop_path){
     d_obs <- d_obs %>%
       dplyr::mutate(pathogenic = as.numeric(ifelse(pathogenic == "-1", 0, as.character(pathogenic))))
     
-    # Run logistic regression model with weights
+    # Run first logistic regression model with weights
     # Model is predicting "pathogenic" based on "annot" or PHRED
     model <- glm(formula, data = d_obs, family="binomial", weights=w) 
     #model <- glm(formula, data = d_obs, family="binomial")  
@@ -320,7 +320,7 @@ prob_imputation <- function(data, prop_path){
     # would be -0.5 or 0.5 if confident that variant is benign or pathogenic
     # want to see how close it is to 1 >> essentially turning it into a confidence
     d_all <- d_all %>%
-      dplyr::mutate(weight = ifelse(pathogenic == 0, abs(prob_disease - 0.5) * 2, weight)) #0.5 is lowest weight you can have
+        dplyr::mutate(weight = ifelse(pathogenic == 0, abs(prob_disease - 0.5) * 2, weight)) #0.5 is lowest weight you can have
     
     
     ## number of imputations used to come up with estimates of logistics regression parameters.
@@ -341,6 +341,7 @@ prob_imputation <- function(data, prop_path){
     #                                           p = summary(model_noweight)$coef[,4])
     plot_data <- c()
     
+    # imputations that will use results from first log model for second log model 
     for (i in 1:n_imputations) {
       print(i)
       # Assuming 'df' has columns: 'predictor', 'classification' (NA for uncertain), 'prob_pathogenic'
@@ -703,7 +704,7 @@ auc_imputation <- function(d_obs, d_unc, annot, p_train=.8, n_imp=200){
 #Threshold Table
 
 ## #################
-<<<<<<< HEAD
+
 ## INCORPORATE UNCERTAIN VARIANTS USING IMPUTATION
 ## ################
 prop_path_update <- gnomad$prob_path_update # estimate of proportion of pathogenic variants (just use 0.04 for now) 
@@ -740,7 +741,7 @@ acmg_table_impute <- function(est_perm, data, prop_path, file="acmg_table_impute
     logodds_bound <- (beta[1] + beta[2]*x) - var_adj * z * se_log_odds
     odds_bound <- exp( var_adj * logodds_bound)
     odds_path = odds_path^var_adj
-=======
+
 ## Sneha Threshold Table 
 ## ################
     
@@ -780,12 +781,12 @@ calculate_thresholds <- function(est_perm, filtered_data, prop_path, file="acmg_
     logodds_bound <- (beta[1] + beta[2] * x) - var_adj * z * se_log_odds
     odds_bound <- exp(var_adj * logodds_bound)
     odds_path <- odds_path^var_adj
->>>>>>> fbc16e7b564b02a8abbf47a818e2f3b5b9e65019
+
     
     return(cutoff - odds_bound / odds_path)
   }
   
-<<<<<<< HEAD
+
   for (i in 1:4){
     
     betas = est_perm[[i]]$params
@@ -828,7 +829,7 @@ calculate_thresholds <- function(est_perm, filtered_data, prop_path, file="acmg_
         return(list(root = NA))
       })
       rslts <- rbind(rslts, c(cat, int, logor, se_int, se_logor, p, 
-=======
+
   # Iterate over annotation scores (only PHRED for now)
   for (annot in c("PHRED")) {
     
@@ -864,19 +865,19 @@ calculate_thresholds <- function(est_perm, filtered_data, prop_path, file="acmg_
       }, error = function(e) list(root = NA))
       
       rslts <- rbind(rslts, c(annot, int, logor, se_int, se_logor, p, 
->>>>>>> fbc16e7b564b02a8abbf47a818e2f3b5b9e65019
+
                               "benign", cutlabel[j], result$root, rng))
     }       
   }
   
-<<<<<<< HEAD
+
   rslts <- as.data.frame(rslts, stringsAsFactors=F)
   names(rslts) <- c("annot", "int", "logor", "se_int", "se_logor", "pval", "var_type", 
                     "acmg_cat", "annot_value", "min_obs", "max_obs")
   
   tbl <- rslts %>% tidyr::pivot_wider(names_from=c("var_type","acmg_cat"),
                                       values_from="annot_value",
-=======
+
   # Convert to dataframe
   rslts <- as.data.frame(rslts, stringsAsFactors = FALSE)
   names(rslts) <- c("annot", "int", "logor", "se_int", "se_logor", "pval", "var_type", 
@@ -885,32 +886,32 @@ calculate_thresholds <- function(est_perm, filtered_data, prop_path, file="acmg_
   # Reshape for readability
   tbl <- rslts %>% tidyr::pivot_wider(names_from = c("var_type", "acmg_cat"),
                                       values_from = "annot_value",
->>>>>>> fbc16e7b564b02a8abbf47a818e2f3b5b9e65019
+
                                       names_glue = "{var_type}_{acmg_cat}") %>%
     dplyr::select(annot, int, logor, se_int, se_logor, pval, 
                   starts_with("pathogenic"), starts_with("benign"),
                   min_obs, max_obs)
   
-<<<<<<< HEAD
+
   
   write.table(file = file, tbl, quote=F, row.names=F, col.names=T, sep="\t")
   cat("Wrote threshold for different ACMG support categories to", file, "\n")
-=======
+
   # Save table to file
   write.table(file = file, tbl, quote = FALSE, row.names = FALSE, col.names = TRUE, sep = "\t")
   cat("Wrote ACMG threshold table to", file, "\n")
->>>>>>> fbc16e7b564b02a8abbf47a818e2f3b5b9e65019
+
   
   return(tbl)
 }
 
-<<<<<<< HEAD
-=======
+
+
 ### STEP 5: Run ACMG Threshold Calculation
 threshold_table <- calculate_thresholds(est_perm, filtered_data, prop_path_update)
 
 print(threshold_table)
->>>>>>> fbc16e7b564b02a8abbf47a818e2f3b5b9e65019
+
 
 ## #################
 ## CI of Threshold Table 
@@ -1162,269 +1163,3 @@ find_cdot(test_pos, gene_info)
 
 
 
-# Load libraries (if not already loaded)
-library(dplyr)
-
-# Assuming d_all and gene_info are already loaded
-
-# Add exon column to gene_info (if not already present)
-if (!("exon" %in% colnames(gene_info))) {
-  gene_info$exon <- 1:nrow(gene_info)
-}
-
-# find_cdot function (as previously defined)
-find_cdot <- function(pos, gene_info) {
-  exon_size <- gene_info$end - gene_info$start
-  pos_adj <- cumsum(exon_size)
-  pos_adj <- c(0, pos_adj[-length(pos_adj)])
-  gene_info$exon <- 1:nrow(gene_info)
-  result <- gene_info %>%
-    dplyr::mutate(in_here = start <= pos & end >= pos,
-                  pos_wi_exon = pos - start) %>%
-    dplyr::filter(in_here == TRUE) %>%
-    dplyr::select(exon, pos_wi_exon)
-  
-  if (nrow(result) > 0) {
-    coding_pos <- pos_adj[result$exon] + result$pos_wi_exon + 1
-    return(coding_pos)
-  } else {
-    return(NA) # Return NA when no exon is found
-  }
-}
-
-# Apply find_cdot to d_all$start
-d_all$coding_start <- sapply(d_all$start.x, function(pos) find_cdot(pos, gene_info))
-
-# Apply find_cdot to d_all$end
-d_all$coding_end <- sapply(d_all$end.x, function(pos) find_cdot(pos, gene_info))
-
-# Print the results
-print(d_all)
-
-
-
-# Add exon column to d_all (if not already present)
-if (!("exon" %in% colnames(d_all))) {
-  d_all$exon <- sapply(d_all$start, function(pos) {
-    gene_info$exon[gene_info$start <= pos & gene_info$end >= pos]
-  })
-}
-
-print(head(d_all)) # Verify exon before homeo_plot
-
-homeo_plot <- function(data_all, prefix = "homeo", gene_info, remove_na = TRUE) {
-  
-  plot_func <- function(d) {
-    exons <- gene_info$start[gene_info$exon != 1 & !is.na(gene_info$start)]
-    p <- ggplot(d, aes(x = start.x, y = score, color = pathogenic)) #using start.x
-    p <- p + geom_point(size = 2, alpha = 0.4) + facet_wrap(~factor(annot), scales = "free_y")
-    p <- p + scale_color_manual(values = c("Benign" = "darkgreen", "Pathogenic" = "darkred", "Uncertain" = "blue"))
-    if(length(exons) > 0){ p <- p + geom_vline(xintercept = exons, linetype = "dotted", color = "darkgray") }
-    p <- p + theme_bw() + xlab("Position") + labs(color = "Variant Class")
-    p <- p + guides(color = guide_legend(override.aes = list(shape = 16))) + theme(axis.ticks.x = element_blank(), axis.text.x = element_blank(), strip.text = element_text(size = 14, face = "bold"), axis.title.y = element_text(size = 14, face = "bold"))
-    file <- paste0(prefix, "_score_x_pos.pdf"); pdf(file, width = 11, height = 8.5); print(p); dev.off(); cat("Created plot", file, "\n")
-  }
-  
-  scores <- colnames(data_all)[colnames(data_all) %in% c("PHRED")]
-  
-  print(table(is.na(data_all$coding_start)))
-  print(table(is.na(data_all$exon)))
-  print(paste("d_all row count before coding_start filter:", nrow(data_all)))
-  
-  if(remove_na == TRUE){
-    data_all <- data_all %>% dplyr::filter(!is.na(coding_start))
-  }
-  
-  print(paste("d_all row count after coding_start filter:", nrow(data_all)))
-  
-  d <- data_all %>%
-    dplyr::filter(!is.na(exon)) %>%
-    dplyr::mutate(exon = factor(exon, levels = as.character(unique(gene_info$exon))),
-                  pathogenic = factor(case_when(pathogenic == 0 ~ "Benign", pathogenic == 1 ~ "Pathogenic", TRUE ~ "Uncertain"), levels = c("Benign", "Pathogenic", "Uncertain"))
-    ) %>%
-    tidyr::pivot_longer(cols = all_of(scores), names_to = "annot", values_to = "score") %>%
-    dplyr::mutate(annot = factor(annot, levels = c("PHRED")))
-  
-  print(paste("d row count:", nrow(d)))
-  print(head(d))
-  print(table(d$start.x))
-  print(sum(duplicated(d)))
-  
-  print(paste("d_all row count:", nrow(data_all)))
-  print(paste("d row count:", nrow(d)))
-  
-  print(head(data.frame(data_all$coding_start, d$start.x)))
-  
-  plot_func(d)
-}
-
-if (!("exon" %in% colnames(d_all))) { d_all$exon <- sapply(d_all$start, function(pos) { gene_info$exon[gene_info$start <= pos & gene_info$end >= pos] }) }
-homeo_plot(data_all = d_all, prefix = "my_d_all_plot", gene_info = gene_info, remove_na = FALSE)
-
-
-
-
-
-
-
-# Calculating c. according to Gemini and plotting it 
-calculate_coding_position <- function(variant_start, gene_info) {
-  # Find the exon the variant is in
-  exon_row <- gene_info[gene_info$start <= variant_start & gene_info$end >= variant_start, ]
-  
-  # If not in an exon, return NA
-  if (nrow(exon_row) == 0) {
-    return(NA)
-  }
-  
-  exon_number <- exon_row$exon
-  
-  # Calculate offset from exon start
-  offset <- variant_start - exon_row$start + 1
-  
-  # Calculate coding position
-  coding_position <- 0
-  
-  # Sum lengths of upstream exons
-  upstream_exons <- gene_info[gene_info$exon < exon_number, ]
-  if (nrow(upstream_exons) > 0) {
-    coding_position <- sum(upstream_exons$end - upstream_exons$start + 1)
-  }
-  
-  # Add offset
-  coding_position <- coding_position + offset
-  
-  return(coding_position)
-}
-
-homeo_plot <- function(data_all, prefix = "homeo", gene_info, remove_na = TRUE) {
-  
-  data_all$coding_start <- sapply(data_all$start.x, function(x) calculate_coding_position(x, gene_info))
-  
-  print(head(data_all$coding_start)) #checking coding_start
-  
-  plot_func <- function(d) {
-    exons <- gene_info$start[gene_info$exon != 1 & !is.na(gene_info$start)]
-    p <- ggplot(d, aes(x = pos_c, y = score, color = pathogenic))
-    p <- p + geom_point(size = 2, alpha = 0.4) + facet_wrap(~factor(annot), scales = "free_y")
-    p <- p + scale_color_manual(values = c("Benign" = "darkgreen", "Pathogenic" = "darkred", "Uncertain" = "blue"))
-    if(length(exons) > 0){ p <- p + geom_vline(xintercept = exons, linetype = "dotted", color = "darkgray") }
-    p <- p + theme_bw() + xlab("Position") + labs(color = "Variant Class")
-    p <- p + guides(color = guide_legend(override.aes = list(shape = 16))) + theme(axis.ticks.x = element_blank(), axis.text.x = element_blank(), strip.text = element_text(size = 14, face = "bold"), axis.title.y = element_text(size = 14, face = "bold"))
-    file <- paste0(prefix, "_score_x_pos.pdf"); pdf(file, width = 11, height = 8.5); print(p); dev.off(); cat("Created plot", file, "\n")
-  }
-  
-  scores <- colnames(data_all)[colnames(data_all) %in% c("PHRED")]
-  
-  print(table(is.na(data_all$coding_start)))
-  print(table(is.na(data_all$exon)))
-  print(paste("d_all row count before coding_start filter:", nrow(data_all)))
-  
-  # Filter NA in coding_start before creating 'd'
-  data_all <- data_all %>% dplyr::filter(!is.na(coding_start))
-  
-  print(paste("d_all row count after coding_start filter:", nrow(data_all)))
-  
-  d <- data_all %>%
-    dplyr::filter(!is.na(exon)) %>%
-    dplyr::rename(pos_c = coding_start) %>%
-    dplyr::mutate(exon = factor(exon, levels = as.character(unique(gene_info$exon))),
-                  pathogenic = factor(case_when(pathogenic == 0 ~ "Benign", pathogenic == 1 ~ "Pathogenic", TRUE ~ "Uncertain"), levels = c("Benign", "Pathogenic", "Uncertain"))
-    ) %>%
-    tidyr::pivot_longer(cols = all_of(scores), names_to = "annot", values_to = "score") %>%
-    dplyr::mutate(annot = factor(annot, levels = c("PHRED")))
-  
-  print(paste("d row count:", nrow(d)))
-  print(head(d))
-  print(table(d$pos_c))
-  print(sum(duplicated(d)))
-  
-  print(paste("d_all row count:", nrow(data_all)))
-  print(paste("d row count:", nrow(d)))
-  
-  print(head(data.frame(data_all$coding_start, d$pos_c)))
-  
-  print(gene_info) #checking gene_info
-  print(head(data_all$start.x)) #checking start.x
-  
-  plot_func(d)
-}
-
-if (!("exon" %in% colnames(d_all))) { d_all$exon <- sapply(d_all$start, function(pos) { gene_info$exon[gene_info$start <= pos & gene_info$end >= pos] }) }
-homeo_plot(data_all = d_all, prefix = "my_d_all_plot", gene_info = gene_info, remove_na = FALSE)
-
-
-
-# Plotting according to Chatgpt -- this is the one that works 
-library(dplyr)
-library(ggplot2)
-library(purrr)  # Load purrr for map_dbl() and map_chr()
-
-
-# Load gene info
-gene_info <- read.table(file = "~/GitHub/ClinVar-GnomAD-Merge/pten_exon_postions", 
-                        as.is = TRUE, header = FALSE, sep = "\t")
-names(gene_info)[1:3] <- c("chr", "start", "end")
-gene_info$exon <- 1:nrow(gene_info)
-
-# Compute cumulative exon lengths
-gene_info <- gene_info %>%
-  mutate(exon_length = end - start + 1,
-         cumulative_length = cumsum(exon_length) - exon_length)
-
-# Function to compute c. position (using start and end)
-find_cdot <- function(start_pos, end_pos) {
-  pos <- ifelse(is.na(end_pos) | start_pos == end_pos, start_pos, floor((start_pos + end_pos) / 2))
-  exon_found <- gene_info %>%
-    filter(start <= pos & end >= pos) %>%
-    mutate(pos_within_exon = pos - start + 1)
-  
-  if (nrow(exon_found) == 0) return(list(coding_pos = NA, exon = NA))
-  coding_pos <- exon_found$cumulative_length + exon_found$pos_within_exon
-  return(list(coding_pos = coding_pos, exon = exon_found$exon))
-}
-
-# Plot function for variants, exons, and pathogenicity
-variant_plot <- function(data_all, prefix = "variant_plot") {
-  if (!"start.x" %in% colnames(data_all)) stop("🚨 Missing 'start.x' column.")
-  if (!"end.x" %in% colnames(data_all)) stop("🚨 Missing 'end.x' column.")
-  if (!"PHRED" %in% colnames(data_all)) stop("🚨 Missing 'PHRED' column.")
-  if (!"pathogenic" %in% colnames(data_all)) stop("🚨 Missing 'pathogenic' column.")  
-  
-  # Compute c. positions and map pathogenic values
-  data_all <- data_all %>%
-    mutate(start = as.numeric(start.x),
-           end = as.numeric(end.x),
-           pathogenic = factor(case_when(
-             pathogenic == -1 ~ "Benign",
-             pathogenic == 0 ~ "Uncertain",
-             pathogenic == 1 ~ "Pathogenic",
-             TRUE ~ "Unknown"  # 🛡️ Safety fallback
-           ), levels = c("Benign", "Uncertain", "Pathogenic", "Unknown"))) %>%
-    rowwise() %>%
-    mutate(cdot_info = list(find_cdot(start, end))) %>%
-    ungroup() %>%  
-    mutate(c_position = map_dbl(cdot_info, ~ .x$coding_pos),
-           exon = factor(map_chr(cdot_info, ~ as.character(.x$exon)))) %>%
-    dplyr::select(-cdot_info)  # ✅ Now works without error
-  
-  # Plot with exon boundaries
-  p <- ggplot(data_all, aes(x = c_position, y = PHRED, color = pathogenic)) +
-    geom_point(size = 3, alpha = 0.7) +
-    scale_color_manual(values = c("Benign" = "green", "Uncertain" = "blue", "Pathogenic" = "red", "Unknown" = "gray")) +
-    geom_vline(xintercept = gene_info$cumulative_length + 1, color = "black", linetype = "dotted") +
-    theme_minimal(base_size = 14) +
-    labs(title = "Variant Pathogenicity Across Coding Sequence",
-         x = "c. Position (Coding DNA Position)",
-         y = "PHRED Score",
-         color = "Pathogenicity") +
-    theme(strip.text = element_text(size = 12, face = "bold"),
-          axis.title = element_text(size = 14, face = "bold"))
-  
-  # Save plot
-  ggsave(paste0(prefix, "_pathogenicity_plot.pdf"), p, width = 10, height = 6)
-  cat("✅ Plot saved as:", paste0(prefix, "_pathogenicity_plot.pdf"), "\n")
-}
-
-# Usage Example
-variant_plot(d_all, prefix = "final_variant_plot")
