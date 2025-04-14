@@ -87,6 +87,8 @@ pten_df$merge <- paste(pten_df$start, pten_df$REF, pten_df$alt_values, sep = " "
 # Outer join to merge Clivar and Gnomad
 combined_outer_join_pten <- merge(pten_df, gnomad_fixed, by = "merge", all = TRUE)
 
+## 91 - 108 make this into a single function - creating your cadd data 
+
 # Adding CADD
 cadd_file <- "F:/Capstone/Resources/CADD/v1.7/whole_genome_SNVs.tsv.gz"
 
@@ -105,6 +107,9 @@ head(cadd_df)
 
 # Create merge column for CADD 
 cadd_df$merge <- paste(cadd_df$start, cadd_df$REF, cadd_df$ALT, sep = " ")
+
+# merging fxn? 
+# merge and manipulate in one function 
 
 # Combined with inner join and CADD 
 final_combined_data_2 <- merge(

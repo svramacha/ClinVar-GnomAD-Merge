@@ -24,7 +24,7 @@ ggplot(final_combined_data_2, aes(x = PHRED, fill = Source, color = Source)) +
   geom_density(alpha = 0.7, linewidth = 1.5) +  # Slightly thicker density lines
   scale_fill_manual(values = fill_colors) +  # Apply pastel fill colors
   scale_color_manual(values = line_colors) +  # Apply slightly darker density lines
-  labs(title = "Distribution of CADD (PHRED) Scores: gnomAD vs ClinVar",
+  labs(title = "Distribution of CADD Scores: gnomAD vs ClinVar",
        subtitle = "Comparing PHRED score distributions for gnomAD and ClinVar variants",
        x = "CADD Score",
        y = "Relative Frequency",
@@ -430,6 +430,79 @@ ggplot(classification_counts, aes(x = Category, y = Count, fill = factor(Combine
 # **Save the corrected plot**
 ggsave("Variant_Classification_StackedBar_CountsOnly.png", width = 8, height = 6, dpi = 300)
 
+
+
+
+
+#### Different color scheme 
+
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(scales)  # For number formatting
+
+# Create a data frame based on your table
+classification_counts <- data.frame(
+  Category = c(rep("Benign (BP4)", 4), "Indeterminate", rep("Pathogenic (PP3)", 4)),
+  Subcategory = c("Very Strong", "Strong", "Moderate", "Supporting",
+                  "Indeterminate",
+                  "Supporting", "Moderate", "Strong", "Very Strong"),
+  Count = c(494, 102, 62, 63, 
+            82, 
+            98, 98, 362, 0)  # Use 0 instead of "—"
+)
+
+# Convert Category to a factor with a specific order
+classification_counts$Category <- factor(classification_counts$Category, 
+                                         levels = c("Benign (BP4)", "Indeterminate", "Pathogenic (PP3)"))
+
+# **Explicitly fix the stacking order**: Supporting → Moderate → Strong → Very Strong
+classification_counts$Subcategory <- factor(classification_counts$Subcategory, 
+                                            levels = c("Supporting", "Moderate", "Strong", "Very Strong", "Indeterminate"),
+                                            ordered = TRUE)  
+
+# **Combine Category and Subcategory to use in colors and labels**
+classification_counts <- classification_counts %>%
+  mutate(Combined = paste(Category, Subcategory, sep = " - "))
+
+custom_palette <- c(
+  # **Benign (BP4) - Shades of Blue**
+  "Benign (BP4) - Supporting"  = "#ADD8E6",  # Light Blue
+  "Benign (BP4) - Moderate"    = "#66B2FF",  # Medium Blue
+  "Benign (BP4) - Strong"      = "#3399FF",  # Darker Blue
+  "Benign (BP4) - Very Strong" = "#003366",  # Darkest Blue
+  
+  # **Indeterminate - Neutral Gray**
+  "Indeterminate - Indeterminate" = "#B2B2B2",  # Neutral Gray
+  
+  # **Pathogenic (PP3) - Now Using Shades of Pink**
+  "Pathogenic (PP3) - Supporting" = "#FFCCE5",  # Lightest Pink
+  "Pathogenic (PP3) - Moderate"   = "#FF99CC",  # Medium Pink
+  "Pathogenic (PP3) - Strong"     = "#FF6699",  # Darker Pink
+  "Pathogenic (PP3) - Very Strong"= "#FF3385"   # Darkest Pink
+)
+
+# **Sort the dataset to ensure correct stacking order**
+classification_counts <- classification_counts %>%
+  arrange(Category, Subcategory)  # This ensures ggplot2 stacks bars correctly
+
+# **Create the vertical stacked bar plot with only counts inside the bars**
+ggplot(classification_counts, aes(x = Category, y = Count, fill = factor(Combined, levels = rev(names(custom_palette))))) +
+  geom_bar(stat = "identity", position = "stack", width = 0.7) +  # Stacked bars
+  geom_text(aes(label = ifelse(Count > 0, Count, "")),  # Label inside bars (only count)
+            position = position_stack(vjust = 0.5), size = 4, color = "black") +
+  scale_y_continuous(labels = comma) +  # Use normal numeric format for y-axis
+  scale_fill_manual(values = custom_palette, name = "Subcategory",
+                    breaks = rev(names(custom_palette)), guide = guide_legend(reverse = TRUE)) +  # Reverse legend order
+  labs(title = "Distribution of Variant Classifications",
+       subtitle = "Based on CADD Pathogenicity Predictions",
+       x = "Classification Category",
+       y = "Count of Variants") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(size = 12, face = "bold"),
+        axis.title.x = element_text(size = 14, face = "bold"),
+        axis.title.y = element_text(size = 14, face = "bold"),
+        legend.position = "right")
 
 
 ########

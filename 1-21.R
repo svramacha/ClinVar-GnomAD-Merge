@@ -202,12 +202,6 @@ boxplot(PHRED ~ pathogenic, data = path_benign, main = "PHRED by Pathogenicity")
 
 
 ### Weighted logistic regression 
-
-
-
-
-
-
 prob_imputation <- function(data, prop_path){
   
   # Adding in weights 
