@@ -9,6 +9,9 @@ library(VariantAnnotation)
 
 
 #### CHUNK 2: Define regions and paths 
+### Specifying gene region 
+# takes a dataframe as an argument start end and name - have a single grange object 
+# dont make this its own function - just implement into the other corresponding data source 
 
 # Define region of interest
 rng <- GRanges(seqnames="chr10", ranges=IRanges(
@@ -34,6 +37,7 @@ rng_CADD <- GRanges(seqnames = "10", ranges = IRanges(
 gnomad_vcf_chr10 <- "F:/Capstone/Resources/gnomAD/gnomad.joint.v4.1.sites.chr10.vcf.bgz"
 
 #### CHUNK 3: Extract Gnomad 
+## Combine chunk 2 and 3 
 
 tab_gnomad <- TabixFile(gnomad_vcf_chr10)
 vcf_rng_gnomad_pten <- readVcf(tab_gnomad, "hg38", param=rng_pten)
@@ -48,7 +52,8 @@ gnomad_fixed$alt_values <- sapply(gnomad_fixed$ALT, function(x) as.character(x))
 gnomad_fixed$merge <- paste(gnomad_fixed$start, gnomad_fixed$REF, gnomad_fixed$alt_values, sep = " ")
 gnomad_fixed <- gnomad_fixed %>% filter(FILTER == "PASS")
 
-#### CHUNK 4: Extract for PTEN 
+#### CHUNK 4: Extract for PTEN in Clinvar 
+
 
 clinvar_vcf <- 'F:/Capstone/Resources/ClinVar/clinvar.vcf.gz'
 vcf_clinvar <- readVcf(clinvar_vcf, "hg38")
@@ -70,6 +75,7 @@ pten_df$merge <- paste(pten_df$start, pten_df$REF, pten_df$alt_values, sep = " "
 combined_outer_join_pten <- merge(pten_df, gnomad_fixed, by = "merge", all = TRUE)
 
 #### CHUNK 6: Extract CADD
+# move this above chunk 5 
 
 cadd_file <- "F:/Capstone/Resources/CADD/v1.7/whole_genome_SNVs.tsv.gz"
 tabix_file <- TabixFile(cadd_file)
@@ -80,6 +86,8 @@ colnames(cadd_df) <- c("CHROM", "start", "REF", "ALT", "RawScore", "PHRED")
 cadd_df$merge <- paste(cadd_df$start, cadd_df$REF, cadd_df$ALT, sep = " ")
 
 #### CHUNK 7: Final merge of DB 
+# combine chunk 5 and 7 for the merge 
+# have only one "merge function" 
 
 final_combined_data_2 <- merge(
   combined_outer_join_pten, 
@@ -112,6 +120,11 @@ final_combined_data_2 <- final_combined_data_2 %>%
   )
 
 #### CHUNK 9: double checking info - do we need this? 
+# output a table the breaks down how pathogencity has been assigned to each variant 
+# what source is it using for the pathogencity 
+# and counts 
+# benign and uncertatin can come from gnomad or clinvar - have a table that outputs where it is coming from
+# simplest way would be to output the counts 
 
 table(final_combined_data_2$pathogenic)
 sum(is.na(final_combined_data_2$pathogenic))
@@ -222,6 +235,12 @@ prob_imputation <- function(filtered_data, prop_path) {
 # Run the function
 prop_path_update <- 0.04
 tmp <- prob_imputation(filtered_data, prop_path_update)
+
+## combine these into a model function - potentially also add the threshold tables - "analysis fxn" 
+# analysis fxn outputs - create list - can contain anything - threshold table output 
+# output = list - table = threhold table
+# list that indexed by strings 
+# what do we want to output out of the fxn - data to use later (tmp 237), threshold table - andrew can show us how to do this too 
 
 
 #### CHUNK 12: ACMG Threshold Tables (already in a fxn)

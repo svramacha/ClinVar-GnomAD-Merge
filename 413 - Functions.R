@@ -258,7 +258,7 @@ run_pipeline <- function() {
   labeled <- assign_pathogenic_labels(combined)
   filtered_data <- labeled %>% filter(!is.na(PHRED))
   
-  prop_path <- 0.04
+  prop_path <- 0.04 # argument into pipeline (set this as default but have user be able to input a value if they want)
   tmp <- prob_imputation(filtered_data, prop_path)
   threshold_table <- calculate_thresholds(tmp$model_estimates, filtered_data, prop_path)
   
