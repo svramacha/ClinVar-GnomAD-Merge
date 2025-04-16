@@ -10,7 +10,7 @@ library(XML)
 library(dplyr)
 
 
-
+# Rest API
 get_clinvar_variants_by_gene <- function(gene_name, desired_columns = NULL) {
   library(httr)
   library(jsonlite)
@@ -167,7 +167,7 @@ print(head(all_clinvar_data))  # Print the first few rows of the combined data
 
 
 
-
+# DIDNT WORK
 library(httr)
 library(XML)
 
@@ -322,3 +322,205 @@ for (gene in genes) {
 
 print(dim(all_gene_data))
 #print(head(all_gene_data)) # Inspect the combined data
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Multipage output from Andrew's code
+library(httr)
+library(jsonlite)
+library(XML)
+
+fetch_all_ids <- function(gene_name, retmax = 500) {
+  base_url <- "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+  esearch_count_url <- paste0(base_url, "esearch.fcgi?db=clinvar&term=", gene_name, "[gene]&rettype=count&retmode=json")
+  
+  count_response <- GET(esearch_count_url)
+  total_records <- as.numeric(fromJSON(content(count_response, "text"))$esearchresult$count)
+  
+  if (total_records == 0) {
+    message("No ClinVar records found for gene: ", gene_name)
+    return(character(0))
+  }
+  
+  message("Total records for ", gene_name, ": ", total_records)
+  
+  all_ids <- character(0)
+  for (retstart in seq(0, total_records, by = retmax)) {
+    message("Fetching IDs from ", retstart)
+    
+    esearch_url <- paste0(base_url, "esearch.fcgi?db=clinvar&term=", gene_name, "[gene]&retmax=", retmax, "&retstart=", retstart)
+    esearch_response <- GET(esearch_url)
+    
+    if (status_code(esearch_response) != 200) next
+    
+    xml_ids <- xmlParse(content(esearch_response, "text"))
+    ids <- xpathSApply(xml_ids, "//IdList/Id", xmlValue)
+    all_ids <- c(all_ids, ids)
+    
+    Sys.sleep(1)  # to avoid API rate limits
+  }
+  
+  return(all_ids)
+}
+
+fetch_variant_summaries <- function(ids, batch_size = 100, desired_columns = NULL) {
+  base_url <- "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+  filtered_results <- list()
+  
+  for (batch_start in seq(1, length(ids), by = batch_size)) {
+    batch_ids <- ids[batch_start:min(batch_start + batch_size - 1, length(ids))]
+    esummary_url <- paste0(base_url, "esummary.fcgi?db=clinvar&id=", paste(batch_ids, collapse = ","), "&retmode=json")
+    
+    response <- GET(esummary_url)
+    if (status_code(response) != 200) next
+    
+    results <- fromJSON(content(response, "text"))$result
+    results <- results[!(names(results) %in% "uids")]
+    
+    for (x in results) {
+      if (!is.null(x$obj_type) && !is.null(x$molecular_consequence_list)) {
+        if (x$obj_type == "single nucleotide variant" && "missense variant" %in% unlist(x$molecular_consequence_list)) {
+          entry <- list()
+          if (is.null(desired_columns)) desired_columns <- names(x)
+          for (col in desired_columns) {
+            entry[[col]] <- if (col %in% names(x)) {
+              val <- x[[col]]
+              if (is.list(val)) paste(unlist(val), collapse = ", ") else val
+            } else {
+              NA
+            }
+          }
+          filtered_results <- append(filtered_results, list(entry))
+        }
+      }
+    }
+    
+    Sys.sleep(1)
+  }
+  
+  if (length(filtered_results) == 0) return(NULL)
+  df <- do.call(rbind, lapply(filtered_results, as.data.frame, stringsAsFactors = FALSE))
+  df$uid <- rownames(df)
+  rownames(df) <- NULL
+  return(df)
+}
+
+# Wrapper Function
+get_clinvar_variants_by_gene <- function(gene_name, desired_columns = NULL) {
+  all_ids <- fetch_all_ids(gene_name)
+  if (length(all_ids) == 0) return(NULL)
+  return(fetch_variant_summaries(all_ids, desired_columns = desired_columns))
+}
+
+# Example usage
+genes <- c("PTEN")
+desired_cols <- c("name", "clinical_significance", "variation_type", "rsid", "gene", "chromosome", "start", "stop", "obj_type", "molecular_consequence_list", "hgvs", "protein_change")
+
+all_clinvar_data <- do.call(rbind, lapply(genes, function(g) get_clinvar_variants_by_gene(g, desired_cols)))
+print(dim(all_clinvar_data))
+print(head(all_clinvar_data))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#rentrez package
+library(rentrez)
+library(dplyr)
+library(purrr)
+
+
+# Function to get all ClinVar variant IDs for a given gene
+get_all_clinvar_ids_by_gene <- function(gene_name, batch_size = 500) {
+  # Search with history so we can reuse WebEnv if needed
+  search <- entrez_search(db = "clinvar", term = paste0(gene_name, "[gene]"), use_history = TRUE)
+  total_count <- search$count
+  message("Total ClinVar records for ", gene_name, ": ", total_count)
+  
+  all_ids <- c()
+  
+  for (retstart in seq(0, total_count - 1, by = batch_size)) {
+    batch <- entrez_search(
+      db = "clinvar",
+      term = paste0(gene_name, "[gene]"),
+      retmax = batch_size,
+      retstart = retstart
+    )
+    all_ids <- c(all_ids, batch$ids)
+    Sys.sleep(0.4)  # Be nice to NCBI servers
+  }
+  
+  return(all_ids)
+}
+
+# Function to fetch ClinVar variant summaries
+fetch_clinvar_summaries <- function(id_vector, batch_size = 200) {
+  all_summaries <- list()
+  
+  for (i in seq(1, length(id_vector), by = batch_size)) {
+    batch_ids <- id_vector[i:min(i + batch_size - 1, length(id_vector))]
+    summary <- entrez_summary(db = "clinvar", id = batch_ids)
+    all_summaries <- c(all_summaries, summary)
+    Sys.sleep(0.4)
+  }
+  
+  return(all_summaries)
+}
+
+# Function to extract useful summary info into a data frame
+extract_summary_info <- function(summary_list) {
+  data.frame(
+    id = sapply(summary_list, function(x) x$uid),
+    title = sapply(summary_list, function(x) x$title),
+    clinical_significance = sapply(summary_list, function(x) {
+      if (!is.null(x$clinical_significance)) x$clinical_significance$description else NA
+    }),
+    review_status = sapply(summary_list, function(x) {
+      if (!is.null(x$clinical_significance)) x$clinical_significance$review_status else NA
+    }),
+    stringsAsFactors = FALSE
+  )
+}
+
+# Example usage:
+gene <- "PTEN"
+pten_ids <- get_all_clinvar_ids_by_gene(gene)
+pten_summaries <- fetch_clinvar_summaries(pten_ids)
+pten_df <- extract_summary_info(pten_summaries)
+
+# View first few rows
+head(pten_df)
+
+# Optional: write to CSV
+# write.csv(pten_df, paste0(gene, "_clinvar_variants.csv"), row.names = FALSE)
