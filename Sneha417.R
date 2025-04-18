@@ -13,6 +13,9 @@ library(VariantAnnotation)
 
 # ------------------------------
 # CHUNK 2: Extract gnomAD for PTEN
+# Function extracts variant data from the gnomAD VCF file for the PTEN gene region.
+# Constructs a GRanges object to define the genomic interval and returns a cleaned dataframe
+# with key fields including allele frequency (FAF) and a unique merge identifier.
 # ------------------------------
 extract_gnomad_pten <- function(vcf_path) {
   region <- GRanges(seqnames = "chr10", ranges = IRanges(start = 87863114, end = 87971941, names = "PTEN"))
@@ -30,6 +33,8 @@ extract_gnomad_pten <- function(vcf_path) {
 
 # ------------------------------
 # CHUNK 3: Extract ClinVar for PTEN
+# Function reads ClinVar VCF, extracts all PTEN-annotated variants using the GENEINFO field,
+# and returns a dataframe with INFO fields and genomic ranges for merging.
 # ------------------------------
 extract_clinvar_pten <- function(clinvar_path) {
   vcf <- readVcf(clinvar_path, "hg38")
@@ -48,6 +53,8 @@ extract_clinvar_pten <- function(clinvar_path) {
 
 # ------------------------------
 # CHUNK 4: Extract CADD for PTEN
+# Function uses tabix to scan the CADD file and extract annotation scores for PTEN region.
+# CADD scores like PHRED and RawScore help estimate deleteriousness of variants.
 # ------------------------------
 extract_cadd_pten <- function(cadd_path) {
   region <- GRanges(seqnames = "10", ranges = IRanges(start = 87863114, end = 87971941, names = "PTEN"))
@@ -63,6 +70,8 @@ extract_cadd_pten <- function(cadd_path) {
 
 # ------------------------------
 # CHUNK 5: Merge All Annotations
+# Merges ClinVar, gnomAD, and CADD data using the merge key (start, REF, ALT).
+# This prepares a unified dataset for pathogenicity classification and modeling.
 # ------------------------------
 merge_all_annotations <- function(clinvar_df, gnomad_df, cadd_df) {
   merged <- merge(clinvar_df, gnomad_df, by = "merge", all = TRUE)
@@ -72,9 +81,20 @@ merge_all_annotations <- function(clinvar_df, gnomad_df, cadd_df) {
 
 # ------------------------------
 # CHUNK 6–8: Modeling and Thresholds
+# This function performs the full pipeline of logistic regression modeling using PHRED scores.
+# It includes probabilistic imputation for uncertain variants and calculates ACMG score thresholds.
+# Inputs:
+#   df = merged dataframe from ClinVar + gnomAD + CADD
+#   prop_path = estimated proportion of pathogenic variants
+#   faf_cutoff = threshold for gnomAD FAF to define benign variants
+#   threshold_output = output file name for threshold table
+# Output:
+#   A list with filtered data, model results, and ACMG threshold table
 # ------------------------------
 
 run_analysis <- function(df, prop_path = 0.04, faf_cutoff = 10^-4, threshold_output = "acmg_table_impute.txt") {
+  # STEP 1: Assign pathogenicity from ClinVar and gnomAD
+  # 1 = Pathogenic, -1 = Benign, 0 = Uncertain/VUS
   df <- df %>%
     mutate(CLNSIG = as.character(CLNSIG),
            CLNSIG = ifelse(CLNSIG %in% c("NULL", "character(0)"), NA, CLNSIG)) %>%
@@ -86,8 +106,10 @@ run_analysis <- function(df, prop_path = 0.04, faf_cutoff = 10^-4, threshold_out
       TRUE ~ 0
     ))
   
+  # Filter for records with PHRED scores
   filtered_data <- df %>% filter(!is.na(PHRED))
   
+  # These include logistic regression with weights, 25x imputation, and uniroot thresholding
   prob_imputation <- function(filtered_data, prop_path) {
     total_obs <- sum(!is.na(filtered_data$pathogenic))
     n_case <- sum(filtered_data$pathogenic == 1, na.rm = TRUE)
@@ -247,16 +269,18 @@ run_analysis <- function(df, prop_path = 0.04, faf_cutoff = 10^-4, threshold_out
 # ------------------------------
 # CHUNK 9: Run Entire Pipeline for PTEN
 # ------------------------------
+
+# Define file paths to VCF and annotation sources
 gnomad_path <- "F:/Capstone/Resources/gnomAD/gnomad.joint.v4.1.sites.chr10.vcf.bgz"
 clinvar_path <- "F:/Capstone/Resources/ClinVar/clinvar.vcf.gz"
 cadd_path <- "F:/Capstone/Resources/CADD/v1.7/whole_genome_SNVs.tsv.gz"
 
-# Extract
+# Extract variant data for PTEN from each source
 gnomad_df <- extract_gnomad_pten(gnomad_path)
 clinvar_df <- extract_clinvar_pten(clinvar_path)
 cadd_df <- extract_cadd_pten(cadd_path)
 
-# Merge
+# Merge all sources into one combined dataframe
 final_df <- merge_all_annotations(clinvar_df, gnomad_df, cadd_df)
 
 # Run model + thresholds
