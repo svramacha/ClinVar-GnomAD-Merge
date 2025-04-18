@@ -4,6 +4,7 @@
 # CHUNK 1: Load Libraries
 # ------------------------------
 library(dplyr)
+library(tidyr)
 library(ggplot2)
 library(pROC)
 library(GenomicRanges)
@@ -105,7 +106,7 @@ run_analysis <- function(df, prop_path = 0.04, faf_cutoff = 10^-4, threshold_out
     
     for (annot in c("PHRED")) {
       d_obs <- d_observed %>%
-        select(merge, all_of(annot), pathogenic, w) %>%
+        dplyr::select(merge, all_of(annot), pathogenic, w) %>%
         mutate(pathogenic = as.numeric(ifelse(pathogenic == -1, 0, 1)))
       
       formula <- as.formula(paste("pathogenic ~", annot))
@@ -114,9 +115,9 @@ run_analysis <- function(df, prop_path = 0.04, faf_cutoff = 10^-4, threshold_out
       
       d_unc <- filtered_data %>%
         filter(pathogenic == 0) %>%
-        select(merge, pathogenic, all_of(annot)) %>%
+        dplyr::select(merge, pathogenic, all_of(annot)) %>%
         mutate(prob_disease = predict(model, newdata = ., type = "response")) %>%
-        select(merge, prob_disease)
+        dplyr::select(merge, prob_disease)
       
       d_all <- filtered_data %>%
         mutate(weight = 1) %>%
@@ -136,7 +137,7 @@ run_analysis <- function(df, prop_path = 0.04, faf_cutoff = 10^-4, threshold_out
         models[[i]] <- glm(formula, family = binomial, data = d_imp, weights = weight)
         
         if (i == 1) {
-          plot_data <- d_imp %>% select(pathogenic, all_of(annot))
+          plot_data <- d_imp %>% dplyr::select(pathogenic, all_of(annot))
         }
       }
       
