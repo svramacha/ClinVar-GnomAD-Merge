@@ -119,7 +119,7 @@ if (status_code(response) == 200) {
 
 
 
-# Edited API again
+# Run this one!!
 if(!require(conflicted)){install.packages("conflicted")}
 library(conflicted)
 library(httr)
@@ -233,4 +233,5 @@ if (status_code(response) == 200) {
   error_content <- httr::content(response, as = "text")
   print(error_content)
 }
+
 

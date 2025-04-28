@@ -524,3 +524,5 @@ head(pten_df)
 
 # Optional: write to CSV
 # write.csv(pten_df, paste0(gene, "_clinvar_variants.csv"), row.names = FALSE)
+
+#
